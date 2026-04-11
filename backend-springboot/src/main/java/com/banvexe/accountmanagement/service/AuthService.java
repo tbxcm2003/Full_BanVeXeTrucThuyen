@@ -1,0 +1,175 @@
+package com.banvexe.accountmanagement.service;
+
+import com.banvexe.accountmanagement.dto.AuthResponse;
+import com.banvexe.accountmanagement.dto.EmailRequest;
+import com.banvexe.accountmanagement.dto.LoginRequest;
+import com.banvexe.accountmanagement.dto.MessageResponse;
+import com.banvexe.accountmanagement.dto.RegisterRequest;
+import com.banvexe.accountmanagement.dto.UserProfileResponse;
+import com.banvexe.accountmanagement.dto.VerifyEmailRequest;
+import com.banvexe.accountmanagement.entity.AccountStatus;
+import com.banvexe.accountmanagement.entity.UserAccount;
+import com.banvexe.accountmanagement.repository.UserAccountRepository;
+import com.banvexe.accountmanagement.security.JwtService;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+@Service
+public class AuthService {
+
+    private final UserAccountRepository userAccountRepository;
+    private final PasswordService passwordService;
+    private final JwtService jwtService;
+    private final JavaMailSender mailSender;
+    private final SecureRandom secureRandom = new SecureRandom();
+    private final Map<String, OtpData> otpStore = new ConcurrentHashMap<>();
+
+    @Value("${spring.mail.username:no-reply@banvexe.local}")
+    private String fromEmail;
+
+    @Value("${app.otp.expiration-minutes:5}")
+    private long otpExpirationMinutes;
+
+    public AuthService(UserAccountRepository userAccountRepository,
+                       PasswordService passwordService,
+                       JwtService jwtService,
+                       JavaMailSender mailSender) {
+        this.userAccountRepository = userAccountRepository;
+        this.passwordService = passwordService;
+        this.jwtService = jwtService;
+        this.mailSender = mailSender;
+    }
+
+    public MessageResponse register(RegisterRequest request) {
+        String email = normalizeEmail(request.email());
+
+        if (userAccountRepository.findByEmail(email).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email đã tồn tại");
+        }
+
+        UserAccount user = new UserAccount();
+        user.setEmail(email);
+        user.setPasswordHash(passwordService.encode(request.password()));
+        user.setFullName(request.fullName().trim());
+        user.setPhone(request.phone());
+        user.setRole(UserAccount.UserRole.KHACH_HANG);
+        user.setStatus(AccountStatus.INACTIVE);
+
+        userAccountRepository.save(user);
+        sendOtp(email, "Xác thực email đăng ký tài khoản");
+
+        return new MessageResponse("Đăng ký thành công. Vui lòng kiểm tra email để lấy OTP xác thực.");
+    }
+
+    public MessageResponse resendOtp(EmailRequest request) {
+        String email = normalizeEmail(request.email());
+        UserAccount user = userAccountRepository.findByEmail(email)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
+
+        if (user.getStatus() == AccountStatus.ACTIVE) {
+            return new MessageResponse("Tài khoản đã xác thực trước đó.");
+        }
+
+        sendOtp(email, "Gửi lại OTP xác thực tài khoản");
+        return new MessageResponse("Đã gửi lại OTP qua email.");
+    }
+
+    public MessageResponse verifyEmail(VerifyEmailRequest request) {
+        String email = normalizeEmail(request.email());
+        OtpData otpData = otpStore.get(email);
+
+        if (otpData == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OTP không tồn tại hoặc đã hết hạn");
+        }
+
+        if (LocalDateTime.now().isAfter(otpData.expiresAt())) {
+            otpStore.remove(email);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OTP đã hết hạn");
+        }
+
+        if (!otpData.code().equals(request.otp())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "OTP không đúng");
+        }
+
+        UserAccount user = userAccountRepository.findByEmail(email)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
+
+        user.setStatus(AccountStatus.ACTIVE);
+        userAccountRepository.save(user);
+        otpStore.remove(email);
+
+        return new MessageResponse("Xác thực email thành công.");
+    }
+
+    public AuthResponse login(LoginRequest request) {
+        String email = normalizeEmail(request.email());
+
+        UserAccount user = userAccountRepository.findByEmail(email)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng"));
+
+        if (!passwordService.matches(request.password(), user.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng");
+        }
+
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản chưa xác thực email hoặc đang bị khóa");
+        }
+
+        String token = jwtService.generateToken(user);
+        return new AuthResponse(token, "Bearer", user.getEmail(), user.getRole().name());
+    }
+
+    public UserProfileResponse me(String email) {
+        UserAccount user = userAccountRepository.findByEmail(normalizeEmail(email))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
+
+        return new UserProfileResponse(
+            user.getId(),
+            user.getEmail(),
+            user.getFullName(),
+            user.getPhone(),
+            user.getRole().name(),
+            user.getStatus().name()
+        );
+    }
+
+    private void sendOtp(String email, String subject) {
+        String otpCode = String.format("%06d", secureRandom.nextInt(1_000_000));
+        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(otpExpirationMinutes);
+        otpStore.put(email, new OtpData(otpCode, expiresAt));
+
+        // Dev mode: log OTP to console instead of sending email
+        System.out.println("=== OTP FOR TESTING ===");
+        System.out.println("Email: " + email);
+        System.out.println("OTP Code: " + otpCode);
+        System.out.println("Expires in: " + otpExpirationMinutes + " minutes");
+        System.out.println("=======================");
+
+        try {
+            SimpleMailMessage mail = new SimpleMailMessage();
+            mail.setFrom(fromEmail);
+            mail.setTo(email);
+            mail.setSubject(subject);
+            mail.setText("Mã OTP của bạn là: " + otpCode + "\nOTP hết hạn sau " + otpExpirationMinutes + " phút.");
+            mailSender.send(mail);
+        } catch (Exception e) {
+            System.out.println("Email sending failed (dev mode): " + e.getMessage());
+        }
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record OtpData(String code, LocalDateTime expiresAt) {
+    }
+}
