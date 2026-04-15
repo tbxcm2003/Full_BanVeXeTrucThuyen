@@ -538,6 +538,77 @@
             },
             "url": "{{baseUrl}}/api/admin/staffs/1/status"
           }
+        },
+        {
+          "name": "DELETE Xóa nhân viên",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/api/admin/staffs/1",
+            "description": "Xóa nhân viên khỏi hệ thống. Thay staffId = 1 bằng ID nhân viên cần xóa."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — CRUD Khách hàng",
+      "item": [
+        {
+          "name": "POST Tạo khách hàng",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"khach.new@example.com\",\n  \"password\": \"123456\",\n  \"fullName\": \"Khách Hàng Mới\",\n  \"phone\": \"0912345678\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/customers",
+            "description": "Tạo tài khoản khách hàng mới. Phone là tùy chọn."
+          }
+        },
+        {
+          "name": "PUT Cập nhật khách hàng",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Khách Hàng Cập Nhật\",\n  \"phone\": \"0923456789\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/customers/6",
+            "description": "Cập nhật thông tin khách hàng. Thay customerId = 6 bằng ID khách cần cập nhật."
+          }
+        },
+        {
+          "name": "PUT Cập nhật trạng thái khách hàng",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/customers/6/status",
+            "description": "Trạng thái: ACTIVE, INACTIVE, BANNED. Thay customerId = 6 bằng ID khách cần cập nhật."
+          }
+        },
+        {
+          "name": "DELETE Xóa khách hàng",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/api/admin/customers/6",
+            "description": "Xóa khách hàng khỏi hệ thống. Thay customerId = 6 bằng ID khách cần xóa."
+          }
         }
       ]
     }

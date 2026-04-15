@@ -1,12 +1,15 @@
 package com.banvexe.accountmanagement.service;
 
 import com.banvexe.accountmanagement.dto.AdminCustomerDetailResponse;
+import com.banvexe.accountmanagement.dto.CreateCustomerRequest;
 import com.banvexe.accountmanagement.dto.CreateStaffRequest;
 import com.banvexe.accountmanagement.dto.CustomerProfileResponse;
 import com.banvexe.accountmanagement.dto.CustomerSummaryResponse;
 import com.banvexe.accountmanagement.dto.PageResponse;
 import com.banvexe.accountmanagement.dto.StaffSummaryResponse;
 import com.banvexe.accountmanagement.dto.TicketSummaryResponse;
+import com.banvexe.accountmanagement.dto.UpdateCustomerRequest;
+import com.banvexe.accountmanagement.dto.UpdateCustomerStatusRequest;
 import com.banvexe.accountmanagement.dto.UpdateStaffStatusRequest;
 import com.banvexe.accountmanagement.entity.AccountStatus;
 import com.banvexe.accountmanagement.entity.UserAccount;
@@ -103,6 +106,73 @@ public class AdminAccountService {
 
         staff.setStatus(request.status());
         userAccountRepository.save(staff);
+    }
+
+    public CustomerSummaryResponse createCustomer(CreateCustomerRequest request) {
+        String email = normalizeEmail(request.email());
+
+        if (userAccountRepository.findByEmail(email).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tên đăng nhập đã tồn tại");
+        }
+
+        UserAccount customer = new UserAccount();
+        customer.setEmail(email);
+        customer.setPasswordHash(passwordService.encode(request.password()));
+        customer.setFullName(request.fullName().trim());
+        customer.setPhone(request.phone() != null ? request.phone().trim() : null);
+        customer.setRole(UserRole.KHACH_HANG);
+        customer.setStatus(AccountStatus.ACTIVE);
+
+        userAccountRepository.save(customer);
+        return toCustomerSummary(customer);
+    }
+
+    public CustomerSummaryResponse updateCustomer(Integer customerId, UpdateCustomerRequest request) {
+        UserAccount customer = userAccountRepository.findById(customerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
+
+        if (customer.getRole() != UserRole.KHACH_HANG) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải khách hàng");
+        }
+
+        customer.setFullName(request.fullName().trim());
+        customer.setPhone(request.phone() != null ? request.phone().trim() : null);
+        userAccountRepository.save(customer);
+        return toCustomerSummary(customer);
+    }
+
+    public void updateCustomerStatus(Integer customerId, UpdateCustomerStatusRequest request) {
+        UserAccount customer = userAccountRepository.findById(customerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
+
+        if (customer.getRole() != UserRole.KHACH_HANG) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải khách hàng");
+        }
+
+        customer.setStatus(request.status());
+        userAccountRepository.save(customer);
+    }
+
+    public void deleteCustomer(Integer customerId) {
+        UserAccount customer = userAccountRepository.findById(customerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
+
+        if (customer.getRole() != UserRole.KHACH_HANG) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải khách hàng");
+        }
+
+        userAccountRepository.delete(customer);
+    }
+
+    public void deleteStaff(Integer staffId) {
+        UserAccount staff = userAccountRepository.findById(staffId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên"));
+
+        if (staff.getRole() != UserRole.NHAN_VIEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải nhân viên");
+        }
+
+        userAccountRepository.delete(staff);
     }
 
     private String blankToNullSearch(String search) {

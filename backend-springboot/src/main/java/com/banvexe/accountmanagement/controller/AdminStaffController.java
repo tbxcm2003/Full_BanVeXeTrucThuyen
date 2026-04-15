@@ -9,6 +9,7 @@ import com.banvexe.accountmanagement.service.AdminAccountService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -54,6 +55,14 @@ public class AdminStaffController {
         @Valid @RequestBody UpdateStaffStatusRequest request
     ) {
         adminAccountService.updateStaffStatus(staffId, request);
-        return ResponseEntity.ok(ApiResponse.success("Xóa/Vô hiệu hóa thành công", null));
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái nhân viên thành công", null));
+    }
+
+    @DeleteMapping("/{staffId}")
+    public ResponseEntity<ApiResponse<Void>> deleteStaff(
+        @PathVariable Integer staffId
+    ) {
+        adminAccountService.deleteStaff(staffId);
+        return ResponseEntity.ok(ApiResponse.success("Xóa nhân viên thành công", null));
     }
 }
