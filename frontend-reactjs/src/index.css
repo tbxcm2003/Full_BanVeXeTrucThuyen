@@ -1,0 +1,47 @@
+@import "tailwindcss";
+@source "./";
+
+body {
+  background-color: rgb(249, 250, 251);
+  color: rgb(17, 24, 39);
+  font-family: system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.btn-primary {
+  background-color: #ef5222;
+  color: white;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: background-color 0.2s;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background-color: #d94219;
+}
+
+.card {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  border: 1px solid rgb(243, 244, 246);
+  padding: 1.5rem;
+}
+
+.input-field {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgb(209, 213, 219);
+  border-radius: 0.5rem;
+  font-size: inherit;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #ef5222;
+  box-shadow: 0 0 0 1px #ef5222;
+}

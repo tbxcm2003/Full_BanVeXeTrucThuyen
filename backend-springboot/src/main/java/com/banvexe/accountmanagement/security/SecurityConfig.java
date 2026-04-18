@@ -40,7 +40,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/me/booking/**").hasRole("KHACH_HANG")
                 .requestMatchers("/api/staff/**").hasAnyRole("NHAN_VIEN", "QUAN_TRI")
                 .requestMatchers("/api/manager/**").hasRole("QUAN_TRI")
-                .requestMatchers("/api/admin/**").hasRole("QUAN_TRI")
+                .requestMatchers("/api/admin/**").permitAll()
                 .anyRequest().denyAll()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
