@@ -21,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -49,6 +50,7 @@ public class AuthService {
         this.mailSender = mailSender;
     }
 
+    @Transactional
     public MessageResponse register(RegisterRequest request) {
         String email = normalizeEmail(request.email());
 
@@ -147,22 +149,17 @@ public class AuthService {
         LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(otpExpirationMinutes);
         otpStore.put(email, new OtpData(otpCode, expiresAt));
 
-        // Dev mode: log OTP to console instead of sending email
-        System.out.println("=== OTP FOR TESTING ===");
-        System.out.println("Email: " + email);
-        System.out.println("OTP Code: " + otpCode);
-        System.out.println("Expires in: " + otpExpirationMinutes + " minutes");
-        System.out.println("=======================");
-
         try {
             SimpleMailMessage mail = new SimpleMailMessage();
             mail.setFrom(fromEmail);
             mail.setTo(email);
             mail.setSubject(subject);
-            mail.setText("Mã OTP của bạn là: " + otpCode + "\nOTP hết hạn sau " + otpExpirationMinutes + " phút.");
+            mail.setText("Xin chào,\n\nMã OTP xác thực tài khoản của bạn là: " + otpCode + "\n\nMã này sẽ hết hạn sau " + otpExpirationMinutes + " phút. Vui lòng không chia sẻ mã này cho bất kỳ ai.");
             mailSender.send(mail);
+            System.out.println("Đã gửi email OTP thực tế đến: " + email);
         } catch (Exception e) {
-            System.out.println("Email sending failed (dev mode): " + e.getMessage());
+            System.err.println("Gửi email thất bại: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Lỗi hệ thống: Không thể gửi email chứa mã OTP. Vui lòng thử lại sau.");
         }
     }
 
