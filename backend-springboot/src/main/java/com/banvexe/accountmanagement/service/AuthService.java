@@ -10,6 +10,7 @@ import com.banvexe.accountmanagement.dto.VerifyEmailRequest;
 import com.banvexe.accountmanagement.entity.AccountStatus;
 import com.banvexe.accountmanagement.entity.UserAccount;
 import com.banvexe.accountmanagement.repository.UserAccountRepository;
+import com.banvexe.accountmanagement.util.PhoneNumberUtil;
 import com.banvexe.accountmanagement.security.JwtService;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -58,11 +59,21 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email đã tồn tại");
         }
 
+        String phone;
+        try {
+            phone = PhoneNumberUtil.toStoredVnMobileOrNull(request.phone());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        if (phone != null && userAccountRepository.findByPhone(phone).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
+        }
+
         UserAccount user = new UserAccount();
         user.setEmail(email);
         user.setPasswordHash(passwordService.encode(request.password()));
         user.setFullName(request.fullName().trim());
-        user.setPhone(request.phone());
+        user.setPhone(phone);
         user.setRole(UserAccount.UserRole.KHACH_HANG);
         user.setStatus(AccountStatus.INACTIVE);
 

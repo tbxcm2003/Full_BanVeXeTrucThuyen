@@ -5,6 +5,7 @@ import com.banvexe.accountmanagement.dto.CustomerProfileResponse;
 import com.banvexe.accountmanagement.dto.UpdateProfileRequest;
 import com.banvexe.accountmanagement.entity.UserAccount;
 import com.banvexe.accountmanagement.repository.UserAccountRepository;
+import com.banvexe.accountmanagement.util.PhoneNumberUtil;
 import java.util.Locale;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,12 @@ public class AccountProfileService {
         UserAccount user = userAccountRepository.findByEmail(normalizeEmail(email))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
 
-        String phone = normalizePhone(request.phone());
+        String phone;
+        try {
+            phone = PhoneNumberUtil.toStoredVnMobileOrNull(request.phone());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
         if (StringUtils.hasText(phone)
             && userAccountRepository.existsByPhoneAndIdNot(phone, user.getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
@@ -70,10 +76,4 @@ public class AccountProfileService {
         return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }
 
-    private String normalizePhone(String phone) {
-        if (!StringUtils.hasText(phone)) {
-            return null;
-        }
-        return phone.trim();
-    }
 }

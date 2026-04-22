@@ -4,6 +4,7 @@ import com.banvexe.accountmanagement.dto.ApiResponse;
 import com.banvexe.accountmanagement.dto.CreateStaffRequest;
 import com.banvexe.accountmanagement.dto.PageResponse;
 import com.banvexe.accountmanagement.dto.StaffSummaryResponse;
+import com.banvexe.accountmanagement.dto.UpdateStaffRequest;
 import com.banvexe.accountmanagement.dto.UpdateStaffStatusRequest;
 import com.banvexe.accountmanagement.service.AdminAccountService;
 import jakarta.validation.Valid;
@@ -47,6 +48,15 @@ public class AdminStaffController {
     ) {
         StaffSummaryResponse data = adminAccountService.createStaff(request);
         return ResponseEntity.ok(ApiResponse.success("Tạo tài khoản nhân viên thành công", data));
+    }
+
+    @PutMapping("/{staffId}")
+    public ResponseEntity<ApiResponse<StaffSummaryResponse>> updateStaff(
+        @PathVariable Integer staffId,
+        @Valid @RequestBody UpdateStaffRequest request
+    ) {
+        StaffSummaryResponse data = adminAccountService.updateStaff(staffId, request);
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật nhân viên thành công", data));
     }
 
     @PutMapping("/{staffId}/status")

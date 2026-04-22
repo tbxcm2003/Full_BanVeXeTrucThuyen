@@ -5,18 +5,24 @@ import com.banvexe.accountmanagement.dto.CreateCustomerRequest;
 import com.banvexe.accountmanagement.dto.CreateStaffRequest;
 import com.banvexe.accountmanagement.dto.CustomerProfileResponse;
 import com.banvexe.accountmanagement.dto.CustomerSummaryResponse;
+import com.banvexe.accountmanagement.dto.DashboardStatsResponse;
 import com.banvexe.accountmanagement.dto.PageResponse;
 import com.banvexe.accountmanagement.dto.StaffSummaryResponse;
 import com.banvexe.accountmanagement.dto.TicketSummaryResponse;
 import com.banvexe.accountmanagement.dto.UpdateCustomerRequest;
 import com.banvexe.accountmanagement.dto.UpdateCustomerStatusRequest;
+import com.banvexe.accountmanagement.dto.UpdateStaffRequest;
 import com.banvexe.accountmanagement.dto.UpdateStaffStatusRequest;
 import com.banvexe.accountmanagement.entity.AccountStatus;
 import com.banvexe.accountmanagement.entity.UserAccount;
 import com.banvexe.accountmanagement.entity.UserAccount.UserRole;
 import com.banvexe.accountmanagement.entity.VeXe;
+import com.banvexe.accountmanagement.repository.ChuyenXeRepository;
+import com.banvexe.accountmanagement.repository.TuyenXeRepository;
 import com.banvexe.accountmanagement.repository.UserAccountRepository;
 import com.banvexe.accountmanagement.repository.VeXeRepository;
+import com.banvexe.accountmanagement.repository.XeRepository;
+import com.banvexe.accountmanagement.util.PhoneNumberUtil;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.data.domain.Page;
@@ -33,16 +39,41 @@ public class AdminAccountService {
 
     private final UserAccountRepository userAccountRepository;
     private final VeXeRepository veXeRepository;
+    private final TuyenXeRepository tuyenXeRepository;
+    private final ChuyenXeRepository chuyenXeRepository;
+    private final XeRepository xeRepository;
     private final PasswordService passwordService;
 
     public AdminAccountService(
         UserAccountRepository userAccountRepository,
         VeXeRepository veXeRepository,
+        TuyenXeRepository tuyenXeRepository,
+        ChuyenXeRepository chuyenXeRepository,
+        XeRepository xeRepository,
         PasswordService passwordService
     ) {
         this.userAccountRepository = userAccountRepository;
         this.veXeRepository = veXeRepository;
+        this.tuyenXeRepository = tuyenXeRepository;
+        this.chuyenXeRepository = chuyenXeRepository;
+        this.xeRepository = xeRepository;
         this.passwordService = passwordService;
+    }
+
+    public DashboardStatsResponse getDashboardStats() {
+        long customers = userAccountRepository.countUsersWithRole(UserRole.KHACH_HANG);
+        long staff = userAccountRepository.countUsersWithRole(UserRole.NHAN_VIEN);
+        long lockedCustomers = userAccountRepository.countUsersWithRoleAndStatus(
+            UserRole.KHACH_HANG, AccountStatus.INACTIVE);
+        long lockedStaff = userAccountRepository.countUsersWithRoleAndStatus(
+            UserRole.NHAN_VIEN, AccountStatus.INACTIVE);
+        long locked = lockedCustomers + lockedStaff;
+        long routes = tuyenXeRepository.count();
+        long trips = chuyenXeRepository.count();
+        long tickets = veXeRepository.count();
+        long vehicles = xeRepository.count();
+        return new DashboardStatsResponse(
+            customers, staff, locked, customers + staff, routes, trips, tickets, vehicles);
     }
 
     public PageResponse<CustomerSummaryResponse> listCustomers(String search, int page, int size) {
@@ -85,13 +116,38 @@ public class AdminAccountService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tên đăng nhập đã tồn tại");
         }
 
+        String phone = parseVnPhoneOrNull(request.phone());
+        if (phone != null && userAccountRepository.findByPhone(phone).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
+        }
+
         UserAccount staff = new UserAccount();
         staff.setEmail(email);
         staff.setPasswordHash(passwordService.encode(request.password()));
         staff.setFullName(request.fullName().trim());
+        staff.setPhone(phone);
         staff.setRole(UserRole.NHAN_VIEN);
         staff.setStatus(AccountStatus.ACTIVE);
 
+        userAccountRepository.save(staff);
+        return toStaffSummary(staff);
+    }
+
+    public StaffSummaryResponse updateStaff(Integer staffId, UpdateStaffRequest request) {
+        UserAccount staff = userAccountRepository.findById(staffId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy nhân viên"));
+
+        if (staff.getRole() != UserRole.NHAN_VIEN) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải nhân viên");
+        }
+
+        String phone = parseVnPhoneOrNull(request.phone());
+        if (phone != null && userAccountRepository.existsByPhoneAndIdNot(phone, staffId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
+        }
+
+        staff.setFullName(request.fullName().trim());
+        staff.setPhone(phone);
         userAccountRepository.save(staff);
         return toStaffSummary(staff);
     }
@@ -115,11 +171,16 @@ public class AdminAccountService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tên đăng nhập đã tồn tại");
         }
 
+        String phone = parseVnPhoneOrNull(request.phone());
+        if (phone != null && userAccountRepository.findByPhone(phone).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
+        }
+
         UserAccount customer = new UserAccount();
         customer.setEmail(email);
         customer.setPasswordHash(passwordService.encode(request.password()));
         customer.setFullName(request.fullName().trim());
-        customer.setPhone(request.phone() != null ? request.phone().trim() : null);
+        customer.setPhone(phone);
         customer.setRole(UserRole.KHACH_HANG);
         customer.setStatus(AccountStatus.ACTIVE);
 
@@ -136,7 +197,11 @@ public class AdminAccountService {
         }
 
         customer.setFullName(request.fullName().trim());
-        customer.setPhone(request.phone() != null ? request.phone().trim() : null);
+        String phone = parseVnPhoneOrNull(request.phone());
+        if (phone != null && userAccountRepository.existsByPhoneAndIdNot(phone, customerId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
+        }
+        customer.setPhone(phone);
         userAccountRepository.save(customer);
         return toCustomerSummary(customer);
     }
@@ -218,8 +283,17 @@ public class AdminAccountService {
             u.getId(),
             u.getEmail(),
             u.getFullName(),
+            u.getPhone(),
             u.getStatus().name()
         );
+    }
+
+    private String parseVnPhoneOrNull(String input) {
+        try {
+            return PhoneNumberUtil.toStoredVnMobileOrNull(input);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
     }
 
     private CustomerProfileResponse toCustomerProfile(UserAccount u) {

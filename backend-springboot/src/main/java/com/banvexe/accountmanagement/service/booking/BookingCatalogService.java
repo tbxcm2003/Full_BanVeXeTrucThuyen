@@ -9,12 +9,13 @@ import com.banvexe.accountmanagement.entity.ChuyenXe;
 import com.banvexe.accountmanagement.entity.RouteStatus;
 import com.banvexe.accountmanagement.entity.TicketStatus;
 import com.banvexe.accountmanagement.entity.TripRunStatus;
+import com.banvexe.accountmanagement.entity.TuyenXe;
+import com.banvexe.accountmanagement.entity.Xe;
 import com.banvexe.accountmanagement.repository.ChiTietVeRepository;
 import com.banvexe.accountmanagement.repository.ChuyenXeRepository;
 import com.banvexe.accountmanagement.repository.TuyenXeRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -53,13 +54,13 @@ public class BookingCatalogService {
         return tuyenXeRepository.searchRoutes(RouteStatus.ACTIVE, di, den).stream()
             .map(t -> new RouteSummaryDto(
                 t.getId(),
-                t.getTenTuyen(),
-                t.getDiemDi(),
-                t.getDiemDen(),
+                t.getTenTuyen() != null ? t.getTenTuyen() : "",
+                t.getDiemDi() != null ? t.getDiemDi() : "",
+                t.getDiemDen() != null ? t.getDiemDen() : "",
                 t.getKhoangCach(),
                 t.getThoiGianDuKien(),
                 t.getGiaVeCoBan(),
-                t.getTrangThai().name()
+                t.getTrangThai() != null ? t.getTrangThai().name() : "INACTIVE"
             ))
             .toList();
     }
@@ -96,7 +97,13 @@ public class BookingCatalogService {
     public SeatMapDto getSeatMap(Integer chuyenId) {
         ChuyenXe c = chuyenXeRepository.findByIdWithDetails(chuyenId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến xe"));
-        int soGhe = c.getXe().getSoGhe();
+        int soGhe = safeTongGhe(c);
+        if (soGhe < 1) {
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Chuyến #" + c.getId() + ": xe không hợp lệ (thiếu hoặc số ghế = 0). Kiểm tra bảng Xe.chuyen_xe."
+            );
+        }
         Set<String> occupied = new HashSet<>(chiTietVeRepository.findOccupiedSeatCodes(c.getId(), STATUSES_BLOCKING_SEAT));
         List<String> labels = generateSeatLabels(soGhe);
         List<SeatStatusDto> seats = labels.stream()
@@ -106,9 +113,23 @@ public class BookingCatalogService {
     }
 
     public int countAvailableSeats(ChuyenXe c) {
-        int total = c.getXe().getSoGhe();
+        // Xe.soGhe là Integer: null → NPE nếu gán thẳng vào int (gây 500 ở GET /api/manager/trips)
+        int total = safeTongGhe(c);
         long occ = chiTietVeRepository.findOccupiedSeatCodes(c.getId(), STATUSES_BLOCKING_SEAT).size();
-        return (int) (total - occ);
+        return (int) Math.max(0L, (long) total - occ);
+    }
+
+    /** Số ghế từ entity xe; null-safe cho DB cũ / cột nullable. */
+    public static int safeTongGhe(ChuyenXe c) {
+        if (c == null) {
+            return 0;
+        }
+        Xe x = c.getXe();
+        if (x == null) {
+            return 0;
+        }
+        Integer n = x.getSoGhe();
+        return n != null ? n : 0;
     }
 
     private boolean isTripStillBookableByTime(ChuyenXe c) {
@@ -117,43 +138,55 @@ public class BookingCatalogService {
     }
 
     private TripSummaryDto toTripSummary(ChuyenXe c, int soGheTrong) {
-        var t = c.getTuyenXe();
-        var x = c.getXe();
+        TuyenXe t = c.getTuyenXe();
+        Xe x = c.getXe();
+        int tongGhe = safeTongGhe(c);
         return new TripSummaryDto(
             c.getId(),
-            t.getTenTuyen(),
-            t.getDiemDi(),
-            t.getDiemDen(),
+            t != null ? t.getTenTuyen() : "",
+            t != null ? t.getDiemDi() : "",
+            t != null ? t.getDiemDen() : "",
             c.getNgayDi(),
             c.getGioDi(),
             c.getGiaVe(),
-            x.getLoaiXe(),
-            x.getBienSo(),
-            x.getSoGhe(),
+            x != null ? x.getLoaiXe() : "",
+            x != null ? x.getBienSo() : "",
+            tongGhe,
             soGheTrong,
-            c.getTrangThai().name()
+            c.getTrangThai() != null ? c.getTrangThai().name() : "UNKNOWN"
         );
     }
 
     private TripDetailDto toTripDetail(ChuyenXe c, int soGheTrong) {
-        var t = c.getTuyenXe();
-        var x = c.getXe();
+        TuyenXe t = c.getTuyenXe();
+        Xe x = c.getXe();
+        int tongGhe = safeTongGhe(c);
+        if (t == null || x == null) {
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Chuyến #" + c.getId() + " thiếu tuyến hoặc xe."
+            );
+        }
         return new TripDetailDto(
             c.getId(),
             t.getId(),
-            t.getTenTuyen(),
-            t.getDiemDi(),
-            t.getDiemDen(),
+            nn(t.getTenTuyen()),
+            nn(t.getDiemDi()),
+            nn(t.getDiemDen()),
             c.getNgayDi(),
             c.getGioDi(),
             c.getGiaVe(),
             x.getId(),
-            x.getLoaiXe(),
-            x.getBienSo(),
-            x.getSoGhe(),
+            nn(x.getLoaiXe()),
+            nn(x.getBienSo()),
+            tongGhe,
             soGheTrong,
-            c.getTrangThai().name()
+            c.getTrangThai() != null ? c.getTrangThai().name() : "UNKNOWN"
         );
+    }
+
+    private static String nn(String s) {
+        return s != null ? s : "";
     }
 
     private String blankToPercent(String s) {

@@ -2,10 +2,12 @@ spring:
   application:
     name: quan-ly-tai-khoan
   datasource:
-    url: jdbc:mariadb://localhost:3306/quanlyveXe
+    # Trùng database/data.sql: CREATE DATABASE QuanLyVeXe — import toàn bộ file (schema + mẫu) trước khi chạy; ddl-auto: validate
+    # Nếu máy bạn dùng CSDL tên cũ (ví dụ quanlyveXe), hoặc đổi tên DB trong MariaDB, hoặc sửa lại tên ở đây cho khớp
+    url: jdbc:mariadb://localhost:3306/QuanLyVeXe?characterEncoding=utf8&useUnicode=true&restrictedAuth=mysql_native_password
     driver-class-name: org.mariadb.jdbc.Driver
     username: root
-    password: sapassword
+    password: root
   jpa:
     hibernate:
       ddl-auto: validate
@@ -15,6 +17,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MariaDBDialect
+        default_batch_fetch_size: 32
+        jdbc:
+          batch_size: 32
   mail:
     host: smtp.gmail.com
     port: 587
@@ -36,3 +41,5 @@ app:
     expiration-minutes: 1440
   otp:
     expiration-minutes: 5
+  # Bật true khi dev: API 500 trả thêm nội dung lỗi thật (NPE, SQL, …). Tắt (false) trên môi trường production.
+  expose-internal-error-message: true

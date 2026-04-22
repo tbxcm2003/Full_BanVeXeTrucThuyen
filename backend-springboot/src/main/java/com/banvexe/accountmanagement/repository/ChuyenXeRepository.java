@@ -41,5 +41,17 @@ public interface ChuyenXeRepository extends JpaRepository<ChuyenXe, Integer> {
         """)
     Optional<ChuyenXe> findByIdWithDetails(@Param("id") Integer id);
 
-    boolean existsByTuyenXeId(Integer tuyenXeId);
+    @Query("""
+        SELECT c FROM ChuyenXe c
+        JOIN FETCH c.tuyenXe
+        JOIN FETCH c.xe
+        ORDER BY c.ngayDi DESC, c.gioDi DESC
+        """)
+    List<ChuyenXe> findAllWithTuyenAndXe();
+
+    @Query("SELECT COUNT(c) FROM ChuyenXe c WHERE c.xe.id = :xeId")
+    long countChuyenByXeId(@Param("xeId") Integer xeId);
+
+    /** Tuyến là quan hệ {@code tuyenXe}; dùng {@code _Id} theo cột FK tuyen_xe_id (không phải trường scalar {@code tuyenXeId}). */
+    boolean existsByTuyenXe_Id(Integer tuyenXeId);
 }

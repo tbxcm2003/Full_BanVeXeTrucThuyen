@@ -4,6 +4,7 @@ public record StaffSummaryResponse(
     Integer id,
     String email,
     String fullName,
+    String phone,
     String status
 ) {
 }

@@ -1,6 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Plus, Edit2, Lock, Unlock, Eye, Trash2, X, Save } from 'lucide-react';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Search,
+  Plus,
+  Edit2,
+  Lock,
+  Unlock,
+  Trash2,
+  X,
+  Save,
+  Users,
+  Activity,
+  Briefcase,
+  AlertCircle,
+  RefreshCw,
+} from 'lucide-react';
+import { api } from '../../api/client';
+import AdminPageStats from '../../components/admin/AdminPageStats';
+
+function toNum(v: unknown): number {
+  if (typeof v === 'number' && !Number.isNaN(v)) return v;
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v);
+    return Number.isNaN(n) ? 0 : n;
+  }
+  return 0;
+}
 
 // Định nghĩa kiểu dữ liệu cho một tài khoản trong hệ thống
 interface Account {
@@ -25,21 +49,52 @@ const AccountManagement: React.FC = () => {
   const [currentAccount, setCurrentAccount] = useState<Partial<Account>>({});
   const [customPassword, setCustomPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [stats, setStats] = useState({
+    customers: 0,
+    staff: 0,
+    locked: 0,
+    total: 0,
+  });
 
   // Đường dẫn API cơ sở (đã dùng proxy /api rút gọn domain)
   const apiUrl = '/api';
+
+  const fetchStats = useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      const res = await api.get('/api/admin/dashboard/stats');
+      const d = res.data?.data;
+      if (d != null) {
+        setStats({
+          customers: toNum(d.customers),
+          staff: toNum(d.staff),
+          locked: toNum(d.locked),
+          total: d.total != null ? toNum(d.total) : toNum(d.customers) + toNum(d.staff),
+        });
+      }
+    } catch (e) {
+      console.error('Lỗi tải thống kê:', e);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
 
   // Tự động lấy lại danh sách tài khoản mỗi khi chuyển tab (Khách hàng <-> Nhân viên)
   useEffect(() => {
     fetchAccounts(activeTab);
   }, [activeTab]);
 
+  useEffect(() => {
+    void fetchStats();
+  }, [fetchStats]);
+
   // Hàm gọi API lấy danh sách tài khoản thực tế từ Backend Database
   const fetchAccounts = async (type: 'CUSTOMER' | 'STAFF') => {
     try {
       setLoading(true);
       const endpoint = type === 'CUSTOMER' ? '/admin/customers' : '/admin/staffs';
-      const response = await axios.get(`${apiUrl}${endpoint}`);
+      const response = await api.get(`${apiUrl}${endpoint}`);
       
       const rawData = response.data?.data?.content || response.data?.data || [];
       
@@ -97,31 +152,34 @@ const AccountManagement: React.FC = () => {
       const endpoint = currentAccount.role === 'CUSTOMER' ? '/admin/customers' : '/admin/staffs';
       
       if (modalMode === 'ADD') { // Thêm dữ liệu tài khoản mới
-        const payload: any = {
-          email: currentAccount.email,
-          fullName: currentAccount.name,
-          password: customPassword || '123456', // gán mật khẩu mặc định "123456" nếu để trống
+        const ph = String(currentAccount.phone ?? '')
+          .replace(/\u00A0/g, ' ')
+          .trim();
+        const payload: Record<string, string | null> = {
+          email: String(currentAccount.email ?? ''),
+          fullName: String(currentAccount.name ?? ''),
+          password: customPassword || '123456', // mặc định 123456 nếu để trống
         };
-        if (currentAccount.role === 'CUSTOMER') {
-          payload.phone = currentAccount.phone || '';
-        }
-        await axios.post(`${apiUrl}${endpoint}`, payload);
+        payload.phone = ph.length > 0 ? ph : null;
+        await api.post(`${apiUrl}${endpoint}`, payload, {
+          headers: { 'Content-Type': 'application/json' },
+        });
       } else { // Cập nhật dữ liệu
-        if (currentAccount.role === 'CUSTOMER') { // Hiện Backend Spring Boot chỉ cho phép API Put thông tin của User KH
-          const payload = {
-            fullName: currentAccount.name,
-            phone: currentAccount.phone || ''
-          };
-          await axios.put(`${apiUrl}${endpoint}/${currentAccount.id}`, payload);
-        } else {
-          alert('Tài khoản nhân viên không hỗ trợ sửa thông tin (chỉ khóa/xóa). Vui lòng liên hệ quản trị viên.');
-          setIsSubmitting(false);
-          return;
-        }
+        const ph = String(currentAccount.phone ?? '')
+          .replace(/\u00A0/g, ' ')
+          .trim();
+        const payload = {
+          fullName: String(currentAccount.name ?? ''),
+          phone: ph.length > 0 ? ph : null,
+        };
+        await api.put(`${apiUrl}${endpoint}/${currentAccount.id}`, payload, {
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
       
       // Load lại bảng data sau khi Thêm/Sửa thành công
       fetchAccounts(activeTab);
+      void fetchStats();
       closeModal();
     } catch (error: any) {
       console.error('Error saving account:', error);
@@ -136,8 +194,9 @@ const AccountManagement: React.FC = () => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa tài khoản này vĩnh viễn?')) return;
     try {
       const endpoint = role === 'CUSTOMER' ? `/admin/customers/${id}` : `/admin/staffs/${id}`;
-      await axios.delete(`${apiUrl}${endpoint}`);
+      await api.delete(`${apiUrl}${endpoint}`);
       fetchAccounts(activeTab);
+      void fetchStats();
     } catch (error: any) {
       console.error('Error deleting account:', error);
       alert(error.response?.data?.message || 'Có lỗi xảy ra khi xóa tài khoản!');
@@ -149,8 +208,9 @@ const AccountManagement: React.FC = () => {
     const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
       const endpoint = role === 'CUSTOMER' ? `/admin/customers/${id}/status` : `/admin/staffs/${id}/status`;
-      await axios.put(`${apiUrl}${endpoint}`, { status: newStatus });
+      await api.put(`${apiUrl}${endpoint}`, { status: newStatus });
       fetchAccounts(activeTab);
+      void fetchStats();
     } catch (error: any) {
       console.error('Error toggling status:', error);
       alert(error.response?.data?.message || 'Có lỗi xảy ra khi cập nhật trạng thái!');
@@ -166,13 +226,36 @@ const AccountManagement: React.FC = () => {
           <span className="w-1.5 h-6 bg-gradient-to-b from-[#ef5222] to-[#fd7e14] rounded-full inline-block"></span>
           Quản Lý Tài Khoản
         </h2>
-        <button 
-          onClick={() => openModal('ADD')}
-          className='flex justify-center items-center gap-2 bg-[#ef5222] hover:bg-[#d94219] text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-sm focus:outline-none text-sm'
-        >
-          <Plus size={18} /> Thêm Tài Khoản Mới
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void fetchStats()}
+            className="flex justify-center items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm hover:bg-gray-50"
+            title="Làm mới thống kê"
+          >
+            <RefreshCw size={16} className={statsLoading ? 'animate-spin' : ''} />
+            Thống kê
+          </button>
+          <button
+            onClick={() => openModal('ADD')}
+            className='flex justify-center items-center gap-2 bg-[#ef5222] hover:bg-[#d94219] text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-sm focus:outline-none text-sm'
+          >
+            <Plus size={18} /> Thêm Tài Khoản Mới
+          </button>
+        </div>
       </div>
+
+      <AdminPageStats
+        title="Thống kê tài khoản"
+        loading={statsLoading}
+        className="mb-2"
+        items={[
+          { label: 'Tổng tài khoản', value: stats.total, icon: <Users size={22} />, color: 'text-[#ef5222]', bg: 'bg-[#fff0eb]', border: 'border-[#ffdbcf]' },
+          { label: 'Khách hàng', value: stats.customers, icon: <Activity size={22} />, color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-100' },
+          { label: 'Nhân viên', value: stats.staff, icon: <Briefcase size={22} />, color: 'text-green-500', bg: 'bg-green-50', border: 'border-green-100' },
+          { label: 'Bị khóa (INACTIVE)', value: stats.locked, icon: <AlertCircle size={22} />, color: 'text-red-500', bg: 'bg-red-50', border: 'border-red-100' },
+        ]}
+      />
 
       <div className='bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'>
         {/* Toolbar */}
@@ -342,14 +425,7 @@ const AccountManagement: React.FC = () => {
               </button>
             </div>
             
-            <form onSubmit={handleSave} className="p-5 space-y-4">
-              {/* Note for Staff edit */}
-              {modalMode === 'EDIT' && currentAccount.role === 'STAFF' && (
-                <div className="bg-yellow-50 text-yellow-800 p-3 rounded-lg text-sm mb-4">
-                  Cập nhật thông tin chi tiết nhân viên chưa được hỗ trợ trên hệ thống. 
-                </div>
-              )}
-
+            <form onSubmit={handleSave} noValidate className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Địa chỉ Email <span className="text-red-500">*</span></label>
                 <input 
@@ -383,21 +459,21 @@ const AccountManagement: React.FC = () => {
                 <input 
                   type="text" 
                   required
-                  disabled={modalMode === 'EDIT' && currentAccount.role === 'STAFF'}
-                  className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm transition-colors ${modalMode === 'EDIT' && currentAccount.role === 'STAFF' ? 'bg-gray-100 text-gray-500' : 'focus:ring-2 focus:ring-[#ef5222]/20 focus:border-[#ef5222]'} focus:outline-none`}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm transition-colors focus:ring-2 focus:ring-[#ef5222]/20 focus:border-[#ef5222] focus:outline-none"
                   value={currentAccount.name || ''}
                   onChange={e => setCurrentAccount({ ...currentAccount, name: e.target.value })}
                   placeholder="Nhập họ và tên thật"
                 />
               </div>
 
-              {currentAccount.role === 'CUSTOMER' && (
+              {(currentAccount.role === 'CUSTOMER' || currentAccount.role === 'STAFF') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Số điện thoại <span className="text-gray-400 font-normal">(Tùy chọn)</span></label>
                   <input 
                     type="text" 
-                    pattern="^$|^0[0-9]{9,10}$"
-                    title="Số điện thoại phải bắt đầu bằng 0 và có 10 số"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    title="Số VN: 10 số bắt đầu bằng 0, hoặc +84 / 84"
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#ef5222]/20 focus:border-[#ef5222] transition-colors focus:outline-none"
                     value={currentAccount.phone || ''}
                     onChange={e => setCurrentAccount({ ...currentAccount, phone: e.target.value })}
@@ -416,7 +492,7 @@ const AccountManagement: React.FC = () => {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={isSubmitting || (modalMode === 'EDIT' && currentAccount.role === 'STAFF')}
+                  disabled={isSubmitting}
                   className="flex items-center gap-2 px-5 py-2 bg-[#ef5222] text-white rounded-lg text-sm font-semibold hover:bg-[#d94219] transition-colors disabled:opacity-50"
                 >
                   {isSubmitting ? (

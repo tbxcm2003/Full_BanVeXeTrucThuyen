@@ -104,11 +104,11 @@ INSERT INTO TuyenXe (ten_tuyen, diem_di, diem_den, khoang_cach, thoi_gian_du_kie
 ('Sài Gòn - Đà Lạt', 'TP. Hồ Chí Minh', 'Đà Lạt', 300.00, 420, 250000.00, 'ACTIVE'),
 ('Sài Gòn - Nha Trang', 'TP. Hồ Chí Minh', 'Nha Trang', 400.00, 540, 300000.00, 'ACTIVE');
 
--- Dữ liệu mẫu bảng ChuyenXe
+-- Dữ liệu mẫu bảng ChuyenXe (ngày giờ trong tương lai so với 2026-04-22 — phù hợp tạo chuyến mới / kiểm thử)
 INSERT INTO ChuyenXe (tuyen_xe_id, xe_id, ngay_di, gio_di, gia_ve, trang_thai) VALUES
-(1, 1, '2026-04-20', '22:00:00', 250000.00, 'CHUA_KHOI_HANH'),
-(1, 3, '2026-04-20', '23:30:00', 350000.00, 'CHUA_KHOI_HANH'),
-(2, 2, '2026-04-21', '20:00:00', 300000.00, 'CHUA_KHOI_HANH');
+(1, 1, '2026-12-20', '22:00:00', 250000.00, 'CHUA_KHOI_HANH'),
+(1, 3, '2026-12-20', '23:30:00', 350000.00, 'CHUA_KHOI_HANH'),
+(2, 2, '2026-12-21', '20:00:00', 300000.00, 'CHUA_KHOI_HANH');
 
 -- Dữ liệu mẫu bảng VeXe
 INSERT INTO VeXe (ma_ve, khach_hang_id, chuyen_xe_id, so_luong_ghe, tong_tien, trang_thai, ghi_chu) VALUES

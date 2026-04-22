@@ -45,6 +45,13 @@ public class StaffBookingService {
         this.bookingCatalogService = bookingCatalogService;
     }
 
+    @Transactional(readOnly = true)
+    public StaffTicketDetailDto getTicketDetailById(Integer ticketId) {
+        VeXe ve = veXeRepository.findByIdWithDetails(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé"));
+        return toStaffDetail(ve);
+    }
+
     public StaffTicketDetailDto searchTicket(String maVe, String soDienThoai) {
         if (StringUtils.hasText(maVe)) {
             VeXe ve = veXeRepository.findByMaVe(maVe.trim())
@@ -77,7 +84,8 @@ public class StaffBookingService {
                 .map(s -> s.trim().toUpperCase(Locale.ROOT))
                 .distinct()
                 .toList();
-            Set<String> allowed = new HashSet<>(BookingCatalogService.generateSeatLabels(chuyen.getXe().getSoGhe()));
+            int cap = BookingCatalogService.safeTongGhe(chuyen);
+            Set<String> allowed = new HashSet<>(BookingCatalogService.generateSeatLabels(Math.max(0, cap)));
             for (String s : newSeats) {
                 if (!allowed.contains(s)) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mã ghế không hợp lệ: " + s);
@@ -128,22 +136,29 @@ public class StaffBookingService {
     private StaffTicketDetailDto toStaffDetail(VeXe ve) {
         var user = userAccountRepository.findById(ve.getKhachHangId()).orElse(null);
         ChuyenXe c = ve.getChuyenXe();
+        if (c == null) {
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Vé #" + ve.getId() + " thiếu thông tin chuyến."
+            );
+        }
         var t = c.getTuyenXe();
         var x = c.getXe();
         int trong = bookingCatalogService.countAvailableSeats(c);
+        int tongGhe = BookingCatalogService.safeTongGhe(c);
         TripSummaryDto trip = new TripSummaryDto(
             c.getId(),
-            t.getTenTuyen(),
-            t.getDiemDi(),
-            t.getDiemDen(),
+            t != null ? t.getTenTuyen() : "",
+            t != null ? t.getDiemDi() : "",
+            t != null ? t.getDiemDen() : "",
             c.getNgayDi(),
             c.getGioDi(),
             c.getGiaVe(),
-            x.getLoaiXe(),
-            x.getBienSo(),
-            x.getSoGhe(),
+            x != null ? x.getLoaiXe() : "",
+            x != null ? x.getBienSo() : "",
+            tongGhe,
             trong,
-            c.getTrangThai().name()
+            c.getTrangThai() != null ? c.getTrangThai().name() : "UNKNOWN"
         );
         List<String> seats = chiTietVeRepository.findByVeXeId(ve.getId()).stream()
             .map(ChiTietVe::getSoGhe)

@@ -2,6 +2,10 @@ package com.banvexe.accountmanagement.config;
 
 import com.banvexe.accountmanagement.dto.ApiResponse;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -12,6 +16,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @Value("${app.expose-internal-error-message:false}")
+    private boolean exposeInternalErrorMessage;
 
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiResponse<Void>> handleResponseStatusException(ResponseStatusException ex) {
@@ -39,7 +48,17 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
+        log.error("Unhandled server error", ex);
+        String message = "Lỗi hệ thống";
+        if (exposeInternalErrorMessage) {
+            Throwable root = NestedExceptionUtils.getMostSpecificCause(ex);
+            String detail = ex.getClass().getSimpleName();
+            if (root.getMessage() != null && !root.getMessage().isBlank()) {
+                detail = detail + ": " + root.getMessage();
+            }
+            message = detail;
+        }
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-            .body(ApiResponse.error(500, "Lỗi hệ thống"));
+            .body(ApiResponse.error(500, message));
     }
 }

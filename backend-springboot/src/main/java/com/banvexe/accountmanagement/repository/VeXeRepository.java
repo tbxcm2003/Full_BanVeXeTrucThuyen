@@ -1,5 +1,6 @@
 package com.banvexe.accountmanagement.repository;
 
+import com.banvexe.accountmanagement.entity.TicketStatus;
 import com.banvexe.accountmanagement.entity.VeXe;
 import java.util.List;
 import java.util.Optional;
@@ -8,6 +9,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface VeXeRepository extends JpaRepository<VeXe, Integer> {
+
+    List<VeXe> findByChuyenXe_Id(Integer chuyenXeId);
+
+    long countByTrangThai(TicketStatus trangThai);
+
+    boolean existsByMaVeAndIdNot(String maVe, Integer id);
 
     Optional<VeXe> findByMaVe(String maVe);
 
@@ -33,4 +40,15 @@ public interface VeXeRepository extends JpaRepository<VeXe, Integer> {
         WHERE v.id = :id
         """)
     Optional<VeXe> findByIdWithDetails(@Param("id") Integer id);
+
+    /**
+     * Chỉ join-fetch chuyến; tuyến load lazy trong cùng transaction (tránh HQL lồng
+     * {@code left join fetch c.tuyenXe} gây lỗi tạo SQL trên một số bản Hibernate/MariaDB).
+     * Phân trang cắt slice trong service.
+     */
+    @Query("select v from VeXe v left join fetch v.chuyenXe c order by v.ngayDat desc")
+    List<VeXe> findAllForManagerListWithFetches();
+
+    @Query("select v from VeXe v left join fetch v.chuyenXe c where v.trangThai = :st order by v.ngayDat desc")
+    List<VeXe> findByTrangThaiForManagerListWithFetches(@Param("st") TicketStatus st);
 }

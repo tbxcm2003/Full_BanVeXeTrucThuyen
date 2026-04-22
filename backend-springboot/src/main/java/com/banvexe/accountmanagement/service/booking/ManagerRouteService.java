@@ -24,6 +24,7 @@ public class ManagerRouteService {
         this.chuyenXeRepository = chuyenXeRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<RouteSummaryDto> listAll() {
         return tuyenXeRepository.findAll().stream().map(this::toDto).toList();
     }
@@ -67,7 +68,7 @@ public class ManagerRouteService {
     public void deleteOrDeactivate(Integer id) {
         TuyenXe t = tuyenXeRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tuyến"));
-        if (chuyenXeRepository.existsByTuyenXeId(id)) {
+        if (chuyenXeRepository.existsByTuyenXe_Id(id)) {
             t.setTrangThai(RouteStatus.INACTIVE);
             tuyenXeRepository.save(t);
             return;
@@ -78,13 +79,13 @@ public class ManagerRouteService {
     private RouteSummaryDto toDto(TuyenXe t) {
         return new RouteSummaryDto(
             t.getId(),
-            t.getTenTuyen(),
-            t.getDiemDi(),
-            t.getDiemDen(),
+            t.getTenTuyen() != null ? t.getTenTuyen() : "",
+            t.getDiemDi() != null ? t.getDiemDi() : "",
+            t.getDiemDen() != null ? t.getDiemDen() : "",
             t.getKhoangCach(),
             t.getThoiGianDuKien(),
             t.getGiaVeCoBan(),
-            t.getTrangThai().name()
+            t.getTrangThai() != null ? t.getTrangThai().name() : "INACTIVE"
         );
     }
 }

@@ -5,6 +5,7 @@ import com.banvexe.accountmanagement.entity.TicketStatus;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -23,5 +24,7 @@ public interface ChiTietVeRepository extends JpaRepository<ChiTietVe, Integer> {
 
     List<ChiTietVe> findByVeXeId(Integer veXeId);
 
-    void deleteByVeXeId(Integer veXeId);
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("DELETE FROM ChiTietVe c WHERE c.veXe.id = :veId")
+    void deleteByVeId(@Param("veId") Integer veId);
 }

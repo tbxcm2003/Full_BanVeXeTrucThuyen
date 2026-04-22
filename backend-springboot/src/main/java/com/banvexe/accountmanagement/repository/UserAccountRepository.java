@@ -1,5 +1,6 @@
 package com.banvexe.accountmanagement.repository;
 
+import com.banvexe.accountmanagement.entity.AccountStatus;
 import com.banvexe.accountmanagement.entity.UserAccount;
 import com.banvexe.accountmanagement.entity.UserAccount.UserRole;
 import java.util.Optional;
@@ -10,6 +11,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserAccountRepository extends JpaRepository<UserAccount, Integer> {
+
+    @Query("SELECT COUNT(u) FROM UserAccount u WHERE u.role = :role")
+    long countUsersWithRole(@Param("role") UserRole role);
+
+    @Query("SELECT COUNT(u) FROM UserAccount u WHERE u.role = :role AND u.status = :status")
+    long countUsersWithRoleAndStatus(@Param("role") UserRole role, @Param("status") AccountStatus status);
 
     Optional<UserAccount> findByEmail(String email);
 
