@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "BanVeXe — Quản lý tài khoản (đầy đủ)",
-    "description": "API tài khoản + tra cứu/đặt vé (SRS).\n\n**Đăng nhập:** *POST Đăng nhập (khách)* → `tokenKhach`; *(admin)* → `tokenAdmin` (dùng cho `/api/admin/**`, `/api/manager/**` và `/api/staff/**` vì `QUAN_TRI` được phép).\n\n**Phản hồi đặt vé:** các endpoint `/api/catalog/**`, `/api/me/booking/**`, `/api/staff/**`, `/api/manager/**` trả JSON dạng `{ code, message, data }`.\n\n**cURL:** trong mô tả các request login.",
+    "description": "API tài khoản + tra cứu/đặt vé (SRS).\n\n**Đăng nhập chung:** cả admin và khách hàng đều dùng `POST /api/auth/login`; phản hồi trả `role` để frontend quyết định vào dashboard admin hay quay về trang công khai.\n\n**Phản hồi đặt vé:** các endpoint `/api/catalog/**`, `/api/me/booking/**`, `/api/staff/**`, `/api/manager/**` trả JSON dạng `{ code, message, data }`.\n\n**cURL:** trong mô tả các request login.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -129,7 +129,7 @@
           }
         },
         {
-          "name": "POST Đăng nhập (khách) → lưu tokenKhach",
+          "name": "POST Đăng nhập chung (khách) → lưu tokenKhach",
           "event": [
             {
               "listen": "test",
@@ -158,11 +158,11 @@
               "raw": "{\n  \"email\": \"khachhang.a@gmail.com\",\n  \"password\": \"123456\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/login",
-            "description": "**Role:** `KHACH_HANG`. Sau **Send**, script **Tests** tự điền biến collection `tokenKhach` từ `accessToken`.\n\n**cURL — Bash / Git Bash**\n```bash\ncurl -s -X POST \"http://localhost:8080/api/auth/login\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\":\"khachhang.a@gmail.com\",\"password\":\"123456\"}'\n```\n\n**cURL — PowerShell**\n```powershell\n$body = @{ email = \"khachhang.a@gmail.com\"; password = \"123456\" } | ConvertTo-Json\nInvoke-RestMethod -Uri \"http://localhost:8080/api/auth/login\" -Method Post -Body $body -ContentType \"application/json; charset=utf-8\"\n```\n\nMật khẩu phải khớp DB (mẫu `data.sql` thường dùng MD5 của `123456`)."
+            "description": "**Role:** `KHACH_HANG`. Sau **Send**, script **Tests** tự điền biến collection `tokenKhach` từ `accessToken`.\n\n**cURL — Bash / Git Bash**\n```bash\ncurl -s -X POST \"http://localhost:8080/api/auth/login\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\":\"khachhang.a@gmail.com\",\"password\":\"123456\"}'\n```\n\n**cURL — PowerShell**\n```powershell\n$body = @{ email = \"khachhang.a@gmail.com\"; password = \"123456\" } | ConvertTo-Json\nInvoke-RestMethod -Uri \"http://localhost:8080/api/auth/login\" -Method Post -Body $body -ContentType \"application/json; charset=utf-8\"\n```\n\nĐăng nhập dùng chung với admin, chỉ khác role trả về. Mật khẩu phải khớp DB (mẫu `data.sql` thường dùng MD5 của `123456`)."
           }
         },
         {
-          "name": "POST Đăng nhập (admin) → lưu tokenAdmin",
+          "name": "POST Đăng nhập chung (admin) → lưu tokenAdmin",
           "event": [
             {
               "listen": "test",
@@ -191,7 +191,7 @@
               "raw": "{\n  \"email\": \"admin.baoxuyen@gmail.com\",\n  \"password\": \"123456\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/login",
-            "description": "**Role:** `QUAN_TRI`. Sau **Send**, script **Tests** tự điền biến collection `tokenAdmin` từ `accessToken`.\n\n**cURL — Bash / Git Bash**\n```bash\ncurl -s -X POST \"http://localhost:8080/api/auth/login\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\":\"admin.baoxuyen@gmail.com\",\"password\":\"123456\"}'\n```\n\n**cURL — PowerShell**\n```powershell\n$body = @{ email = \"admin.baoxuyen@gmail.com\"; password = \"123456\" } | ConvertTo-Json\nInvoke-RestMethod -Uri \"http://localhost:8080/api/auth/login\" -Method Post -Body $body -ContentType \"application/json; charset=utf-8\"\n```\n\nMật khẩu phải khớp tài khoản admin trong DB."
+            "description": "**Role:** `QUAN_TRI`. Sau **Send**, script **Tests** tự điền biến collection `tokenAdmin` từ `accessToken`.\n\n**cURL — Bash / Git Bash**\n```bash\ncurl -s -X POST \"http://localhost:8080/api/auth/login\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\":\"admin.baoxuyen@gmail.com\",\"password\":\"123456\"}'\n```\n\n**cURL — PowerShell**\n```powershell\n$body = @{ email = \"admin.baoxuyen@gmail.com\"; password = \"123456\" } | ConvertTo-Json\nInvoke-RestMethod -Uri \"http://localhost:8080/api/auth/login\" -Method Post -Body $body -ContentType \"application/json; charset=utf-8\"\n```\n\nĐăng nhập dùng chung với khách hàng, chỉ khác role trả về. Mật khẩu phải khớp tài khoản admin trong DB."
           }
         }
       ]

@@ -80,15 +80,6 @@ const AccountManagement: React.FC = () => {
     }
   }, []);
 
-  // Tự động lấy lại danh sách tài khoản mỗi khi chuyển tab (Khách hàng <-> Nhân viên)
-  useEffect(() => {
-    fetchAccounts(activeTab);
-  }, [activeTab]);
-
-  useEffect(() => {
-    void fetchStats();
-  }, [fetchStats]);
-
   // Hàm gọi API lấy danh sách tài khoản thực tế từ Backend Database
   const fetchAccounts = async (type: 'CUSTOMER' | 'STAFF') => {
     try {
@@ -117,6 +108,15 @@ const AccountManagement: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Tự động lấy lại danh sách tài khoản mỗi khi chuyển tab (Khách hàng <-> Nhân viên)
+  useEffect(() => {
+    fetchAccounts(activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    void fetchStats();
+  }, [fetchStats]);
 
   // Logic lọc dữ liệu dựa trên ô tìm kiếm (tìm qua email, tên hoặc sđt)
   const filteredAccounts = accounts.filter(acc => 
@@ -435,7 +435,7 @@ const AccountManagement: React.FC = () => {
                   className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm transition-colors ${modalMode === 'EDIT' ? 'bg-gray-100 text-gray-500' : 'focus:ring-2 focus:ring-[#ef5222]/20 focus:border-[#ef5222]'} focus:outline-none`}
                   value={currentAccount.email || ''}
                   onChange={e => setCurrentAccount({ ...currentAccount, email: e.target.value })}
-                  placeholder="ví dụ: admin@futabus.vn"
+                  placeholder="ví dụ: admin@vinago.vn"
                 />
               </div>
               
