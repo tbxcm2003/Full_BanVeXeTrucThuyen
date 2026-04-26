@@ -25,8 +25,42 @@ type TicketItem = {
   tongTien: number;
   ngayDat?: string;
   maGhe?: string[];
+  ghiChu?: string;
   chuyen?: TripSummary;
 };
+
+/** Từ chối hủy: bản cũ có ngoặc, bản mới một dòng "Từ chối hủy: lý do — thời gian". */
+function parseCancelRejection(ghiChu?: string): string | null {
+  if (!ghiChu) return null;
+  const leg = ghiChu.match(/\[Từ chối hủy:\s*([^\]]*)\]/);
+  if (leg) {
+    const s = leg[1].trim();
+    return s.length > 0 ? s : 'Không nêu lý do';
+  }
+  const k = ghiChu.lastIndexOf('Từ chối hủy:');
+  if (k < 0) return null;
+  const rest = ghiChu.slice(k + 'Từ chối hủy:'.length).trim();
+  if (rest.length === 0) return 'Không nêu lý do';
+  return rest.replace(/\s*—\s*\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}\s*$/u, '').trim() || rest;
+}
+
+/** Vé đã kết thúc (đã hủy / hoàn thành): không hiển thị “từ chối hủy” cũ còn lưu trong ghi chú. */
+function shouldShowStaffRejectNote(trangThai: string, reason: string | null): boolean {
+  if (!reason) return false;
+  if (trangThai === 'DA_HUY' || trangThai === 'HOAN_THANH') return false;
+  return true;
+}
+
+/** Phần sau {@code Hủy vé thành công: } (bản cũ có ngoặc […] vẫn parse được). */
+function parseHuySuccessFromGhiChu(ghiChu?: string): string | null {
+  if (!ghiChu) return null;
+  const leg = ghiChu.match(/\[Hủy vé thành công:\s*([^\]]+)\]/);
+  if (leg) return leg[1].trim();
+  const marker = 'Hủy vé thành công:';
+  const k = ghiChu.lastIndexOf(marker);
+  if (k >= 0) return ghiChu.slice(k + marker.length).trim();
+  return null;
+}
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(value || 0);
@@ -52,6 +86,85 @@ const CustomerTicketHistoryPage = () => {
   const [tickets, setTickets] = useState<TicketItem[]>([]);
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [requestingId, setRequestingId] = useState<number | null>(null);
+  /** Thông báo tạm tại cột Thông báo (yêu cầu hủy gửi đi, hoặc lỗi) */
+  const [ticketInlineMsg, setTicketInlineMsg] = useState<
+    Record<number, { text: string; kind: 'success' | 'error' | 'warn' }>
+  >({});
+
+  const canRequestCancel = (t: TicketItem) => {
+    if (t.trangThai === 'DANG_XU_LY') return false;
+    if (t.trangThai === 'CHO_THANH_TOAN') return true;
+    if (t.trangThai !== 'DA_THANH_TOAN') return false;
+    if (t.ngayDat) {
+      const h = (Date.now() - new Date(t.ngayDat).getTime()) / 3600000;
+      if (h >= 12) return false;
+    }
+    if (t.chuyen?.ngayDi && t.chuyen?.gioDi) {
+      const gio = typeof t.chuyen.gioDi === 'string' ? t.chuyen.gioDi : '';
+      const dep = new Date(`${t.chuyen.ngayDi}T${gio.length >= 5 ? gio.slice(0, 5) : gio}:00`);
+      if (!Number.isNaN(dep.getTime()) && dep.getTime() - Date.now() < 12 * 3600000) return false;
+    }
+    return true;
+  };
+
+  const requestCancel = async (ticket: TicketItem) => {
+    if (!canRequestCancel(ticket)) {
+      setTicketInlineMsg((prev) => ({
+        ...prev,
+        [ticket.id]: {
+          kind: 'error',
+          text: 'Vé này không thể hủy: kiểm tra thời gian đặt, giờ khởi hành hoặc trạng thái.',
+        },
+      }));
+      return;
+    }
+    const msg =
+      ticket.trangThai === 'CHO_THANH_TOAN'
+        ? 'Xác nhận hủy vé chờ thanh toán?'
+        : 'Gửi yêu cầu hủy vé? Nhân viên sẽ duyệt.';
+    if (!window.confirm(msg)) return;
+    setRequestingId(ticket.id);
+    setTicketInlineMsg((prev) => {
+      const next = { ...prev };
+      delete next[ticket.id];
+      return next;
+    });
+    try {
+      const res = await api.post<ApiResponse<unknown>>(`/api/me/booking/tickets/${ticket.id}/cancel`);
+      const m =
+        res.data?.message ||
+        (ticket.trangThai === 'CHO_THANH_TOAN' ? 'Hủy vé thành công' : 'Đã gửi yêu cầu hủy vé.');
+      const r = await api.get<ApiResponse<TicketItem[]>>('/api/me/booking/tickets');
+      const list = (r.data?.data ?? []).slice().sort((a, b) => {
+        const ta = a.ngayDat ? new Date(a.ngayDat).getTime() : 0;
+        const tb = b.ngayDat ? new Date(b.ngayDat).getTime() : 0;
+        return tb - ta;
+      });
+      setTickets(list);
+      const upd = list.find((t) => t.id === ticket.id);
+      const ghiLuuHuy = upd?.trangThai === 'DA_HUY' && parseHuySuccessFromGhiChu(upd.ghiChu);
+      if (upd?.trangThai === 'DANG_XU_LY' || (upd?.trangThai === 'DA_HUY' && !ghiLuuHuy)) {
+        setTicketInlineMsg((prev) => ({ ...prev, [ticket.id]: { kind: 'success', text: m } }));
+        window.setTimeout(() => {
+          setTicketInlineMsg((prev) => {
+            if (prev[ticket.id]?.kind !== 'success') return prev;
+            const next = { ...prev };
+            delete next[ticket.id];
+            return next;
+          });
+        }, 8000);
+      }
+    } catch (e) {
+      const m = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setTicketInlineMsg((prev) => ({
+        ...prev,
+        [ticket.id]: { kind: 'error', text: m || 'Hủy vé không thành công.' },
+      }));
+    } finally {
+      setRequestingId(null);
+    }
+  };
 
   useEffect(() => {
     const loadTickets = async () => {
@@ -150,21 +263,99 @@ const CustomerTicketHistoryPage = () => {
                       <th className="px-4 py-3 font-semibold">Ngày đi</th>
                       <th className="px-4 py-3 font-semibold">Số tiền</th>
                       <th className="px-4 py-3 font-semibold">Trạng thái</th>
+                      <th className="min-w-[200px] px-4 py-3 font-semibold">Thông báo</th>
+                      <th className="px-4 py-3 font-semibold">Hủy vé</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredTickets.map((ticket) => (
-                      <tr key={ticket.id} className="border-t border-gray-100">
-                        <td className="px-4 py-3 font-semibold text-gray-800">{ticket.maVe}</td>
-                        <td className="px-4 py-3">{ticket.maGhe?.length ?? 1}</td>
-                        <td className="px-4 py-3">{ticket.chuyen?.tenTuyen || `${ticket.chuyen?.diemDi || ''} - ${ticket.chuyen?.diemDen || ''}`}</td>
-                        <td className="px-4 py-3">{formatDateTime(ticket.chuyen?.ngayDi, ticket.chuyen?.gioDi)}</td>
-                        <td className="px-4 py-3 font-semibold text-[#00613d]">{formatCurrency(ticket.tongTien)}</td>
-                        <td className="px-4 py-3">
-                          <span className="rounded-full bg-[#fff0ea] px-2.5 py-1 text-xs font-semibold text-[#ef5222]">{ticket.trangThai}</span>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredTickets.map((ticket) => {
+                      const rawReject = parseCancelRejection(ticket.ghiChu);
+                      const rejectReason =
+                        rawReject && shouldShowStaffRejectNote(ticket.trangThai, rawReject) ? rawReject : null;
+                      const huyGhiChu = parseHuySuccessFromGhiChu(ticket.ghiChu);
+                      const huyTrenDb = ticket.trangThai === 'DA_HUY' && huyGhiChu;
+                      const line = ticketInlineMsg[ticket.id];
+                      const showLineTinhNhat = Boolean(
+                        line &&
+                        (line.kind === 'error' ||
+                          line.kind === 'warn' ||
+                          (line.kind === 'success' &&
+                            (ticket.trangThai === 'DANG_XU_LY' || (ticket.trangThai === 'DA_HUY' && !huyTrenDb)))),
+                      );
+                      return (
+                        <tr key={ticket.id} className="border-t border-gray-100">
+                          <td className="px-4 py-3 font-semibold text-gray-800">{ticket.maVe}</td>
+                          <td className="px-4 py-3">{ticket.maGhe?.length ?? 1}</td>
+                          <td className="px-4 py-3">
+                            {ticket.chuyen?.tenTuyen || `${ticket.chuyen?.diemDi || ''} - ${ticket.chuyen?.diemDen || ''}`}
+                          </td>
+                          <td className="px-4 py-3">{formatDateTime(ticket.chuyen?.ngayDi, ticket.chuyen?.gioDi)}</td>
+                          <td className="px-4 py-3 font-semibold text-[#00613d]">{formatCurrency(ticket.tongTien)}</td>
+                          <td className="px-4 py-3">
+                            <span className="rounded-full bg-[#fff0ea] px-2.5 py-1 text-xs font-semibold text-[#ef5222]">
+                              {ticket.trangThai}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <div className="flex min-w-0 max-w-xs flex-col gap-1.5">
+                              {huyTrenDb && (
+                                <p
+                                  className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[11px] leading-snug text-emerald-900"
+                                  role="status"
+                                >
+                                  <span className="font-semibold">Hủy thành công. </span>
+                                  {huyGhiChu}
+                                </p>
+                              )}
+                              {rejectReason && (
+                                <p
+                                  className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-900"
+                                  role="status"
+                                >
+                                  <span className="font-semibold">Từ chối hủy: </span>
+                                  {rejectReason}
+                                </p>
+                              )}
+                              {showLineTinhNhat && line && (
+                                <p
+                                  className={`rounded-md border px-2 py-1.5 text-[11px] leading-snug ${
+                                    line.kind === 'success'
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                                      : line.kind === 'warn'
+                                        ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                        : 'border-red-200 bg-red-50 text-red-800'
+                                  }`}
+                                  role="status"
+                                >
+                                  {line.text}
+                                </p>
+                              )}
+                              {!huyTrenDb && !rejectReason && !showLineTinhNhat && (
+                                <span className="text-xs text-gray-300">—</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            {canRequestCancel(ticket) ? (
+                              <button
+                                type="button"
+                                disabled={requestingId === ticket.id}
+                                onClick={() => void requestCancel(ticket)}
+                                className="rounded-lg border border-[#ef5222] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#ef5222] hover:bg-[#fff0ea] disabled:opacity-50"
+                              >
+                                {requestingId === ticket.id
+                                  ? '…'
+                                  : ticket.trangThai === 'CHO_THANH_TOAN'
+                                    ? 'Hủy vé'
+                                    : 'Yêu cầu hủy vé'}
+                              </button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

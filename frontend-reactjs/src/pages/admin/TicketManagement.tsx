@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Ticket,
   RefreshCw,
   Filter,
   Layers,
@@ -10,138 +9,25 @@ import {
   Ban,
   PartyPopper,
   Pencil,
-  Trash2,
   Search,
 } from 'lucide-react';
 import { api } from '../../api/client';
+import { getStoredRole } from '../../auth/storage';
 import AdminPageStats from '../../components/admin/AdminPageStats';
 import AdminListPagination, { ADMIN_PAGE_SIZE } from '../../components/admin/AdminListPagination';
-
-const STATUSES = [
-  'ALL',
-  'CHO_THANH_TOAN',
-  'DA_THANH_TOAN',
-  'DANG_XU_LY',
-  'DA_HUY',
-  'HOAN_THANH',
-] as const;
-
-const STATUS_LABEL: Record<string, string> = {
-  CHO_THANH_TOAN: 'Chờ thanh toán',
-  DA_THANH_TOAN: 'Đã thanh toán',
-  DANG_XU_LY: 'Đang xử lý',
-  DA_HUY: 'Đã hủy',
-  HOAN_THANH: 'Hoàn thành',
-};
-
-type TicketRow = {
-  id: number;
-  maVe: string;
-  trangThai: string;
-  tongTien: number | string;
-  ngayDat: string;
-  emailKhach?: string;
-  hoTenKhach?: string;
-  ghiChu?: string | null;
-  tenTuyen?: string;
-  ngayChuyen?: string;
-  gioChuyen?: string | { hour?: number; minute?: number };
-};
-
-type PageData = {
-  content: TicketRow[];
-  page: number;
-  size: number;
-  totalElements: number;
-  totalPages: number;
-};
-
-type TripOption = {
-  id: number;
-  tenTuyen?: string;
-  diemDi?: string;
-  diemDen?: string;
-  ngayDi?: string;
-  bienSo?: string;
-};
-
-type TicketDetail = {
-  id: number;
-  maVe: string;
-  trangThai: string;
-  tongTien: number | string;
-  ngayDat: string;
-  ghiChu?: string | null;
-  khachHangId: number;
-  emailKhach?: string;
-  hoTenKhach?: string;
-  maGhe: string[];
-  chuyen: { id: number; tenTuyen?: string; giaVe?: number | string } | null;
-};
-
-function pickGhiChuFromRow(r: unknown): string | null {
-  if (r == null || typeof r !== 'object') return null;
-  const o = r as Record<string, unknown>;
-  const g = o.ghiChu ?? o.ghi_chu;
-  if (g == null) return null;
-  const s = String(g);
-  return s;
-}
-
-function formatInstant(s: string | undefined): string {
-  if (!s) return '—';
-  try {
-    const d = new Date(s);
-    if (Number.isNaN(d.getTime())) return s;
-    return d.toLocaleString('vi-VN');
-  } catch {
-    return s;
-  }
-}
-
-function formatGio(g: TicketRow['gioChuyen']): string {
-  if (g == null) return '';
-  if (typeof g === 'string') {
-    const m = g.match(/^(\d{1,2}):(\d{2})/);
-    if (m) return `${m[1].padStart(2, '0')}:${m[2]}`;
-    return g;
-  }
-  const h = g.hour ?? 0;
-  const mi = g.minute ?? 0;
-  return `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
-}
-
-function instantToLocalInput(iso: string | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
-    d.getMinutes(),
-  )}`;
-}
-
-function localInputToIso(local: string): string | null {
-  if (!local.trim()) return null;
-  const t = new Date(local).getTime();
-  if (Number.isNaN(t)) return null;
-  return new Date(local).toISOString();
-}
-
-function parseGheList(text: string): string[] {
-  return text
-    .split(/[\s,;，]+/u)
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-}
-
-function apiErrMessage(err: unknown): string {
-  return (
-    (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
-    (err as { message?: string })?.message ||
-    'Lỗi không xác định'
-  );
-}
+import { STATUSES, STATUS_LABEL } from './ticketManagementConstants';
+import type { PageData, TicketDetail, TicketEditFormState, TicketRow, TripOption } from './ticketManagementTypes';
+import TicketEditModal from './TicketEditModal';
+import {
+  apiErrMessage,
+  formatGhiChuAdminHienThi,
+  formatGio,
+  formatInstant,
+  instantToLocalInput,
+  localInputToIso,
+  parseGheList,
+  pickGhiChuFromRow,
+} from './ticketManagementUtils';
 
 const TicketManagement: React.FC = () => {
   const [page, setPage] = useState(0);
@@ -152,11 +38,11 @@ const TicketManagement: React.FC = () => {
   const [detailLoad, setDetailLoad] = useState(false);
   const [modalErr, setModalErr] = useState<string | null>(null);
   const [tripOptions, setTripOptions] = useState<TripOption[]>([]);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<TicketEditFormState>({
     maVe: '',
     khachHangId: '',
     chuyenXeId: '',
-    trangThai: 'DANG_XU_LY' as string,
+    trangThai: 'DANG_XU_LY',
     ghiChu: '',
     ngayDatLocal: '',
     tongTienStr: '',
@@ -176,6 +62,7 @@ const TicketManagement: React.FC = () => {
     hoanThanh: 0,
   });
   const [ticketSearch, setTicketSearch] = useState('');
+  const isStaff = getStoredRole() === 'NHAN_VIEN';
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -236,6 +123,17 @@ const TicketManagement: React.FC = () => {
     void loadStats();
   }, [loadStats]);
 
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        void load();
+        void loadStats();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [load, loadStats]);
+
   const openEditModal = async (row: TicketRow) => {
     const id = row.id;
     setModalId(id);
@@ -255,12 +153,13 @@ const TicketManagement: React.FC = () => {
       }
       setTripOptions(Array.isArray(rawTrips) ? rawTrips : []);
       const chId = detail.chuyen?.id;
+      const rawGc = detail.ghiChu != null && detail.ghiChu !== '' ? String(detail.ghiChu) : '';
       setForm({
         maVe: String(detail.maVe ?? ''),
         khachHangId: String(detail.khachHangId ?? ''),
         chuyenXeId: chId != null ? String(chId) : '',
         trangThai: detail.trangThai || 'DA_THANH_TOAN',
-        ghiChu: detail.ghiChu != null && detail.ghiChu !== '' ? String(detail.ghiChu) : '',
+        ghiChu: formatGhiChuAdminHienThi(detail.trangThai, rawGc) || '',
         ngayDatLocal: instantToLocalInput(detail.ngayDat),
         tongTienStr: detail.tongTien != null && detail.tongTien !== '' ? String(detail.tongTien) : '',
         maGheText: Array.isArray(detail.maGhe) && detail.maGhe.length > 0 ? detail.maGhe.join(', ') : '',
@@ -291,6 +190,23 @@ const TicketManagement: React.FC = () => {
   const onSaveTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (modalId == null) return;
+    if (isStaff) {
+      setSaving(true);
+      try {
+        await api.patch(`/api/staff/booking/tickets/${modalId}`, {
+          ghiChu: form.ghiChu != null && form.ghiChu.trim() !== '' ? form.ghiChu.trim() : null,
+          trangThai: form.trangThai,
+        });
+        closeModal();
+        await load();
+        await loadStats();
+      } catch (e) {
+        window.alert(apiErrMessage(e));
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     setSaving(true);
     try {
       const kid = Number(form.khachHangId);
@@ -305,7 +221,7 @@ const TicketManagement: React.FC = () => {
       }
       const maGhe = parseGheList(form.maGheText);
       if (maGhe.length < 1) {
-        alert('Cần ít nhất một mã ghế (ví dụ: A01, A02), cách nhau bởi dấu phẩy hoặc xuống dòng.');
+        alert('Cần ít nhất một mã ghế, cách nhau bởi dấu phẩy hoặc xuống dòng.');
         return;
       }
       const payload: {
@@ -444,20 +360,26 @@ const TicketManagement: React.FC = () => {
           { label: STATUS_LABEL.HOAN_THANH, value: ticketStats.hoanThanh, icon: <PartyPopper size={22} />, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', border: 'border-fuchsia-200' },
         ]}
       />
-      <p className="text-xs text-gray-500 -mt-2 mb-2">Bảng bên dưới: ghi chú lấy từ cột ghi chú (DB) qua API; sửa vé mở form đầy đủ, lưu bằng PUT.</p>
+      <p className="text-sm text-slate-600 -mt-1 mb-1">
+        Ghi chú cập nhật theo từng dòng trên bảng. Vé vừa bị hủy/đổi trạng thái có thể nằm ở bộ lọc khác: dùng{" "}
+        <strong>Tất cả</strong> hoặc <strong>Đã hủy</strong> thay vì chỉ <strong>Đã thanh toán</strong>.
+      </p>
+      {isStaff && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 -mt-1 mb-1">
+          Yêu cầu hủy từ khách: mục <strong>Yêu cầu hủy vé</strong> trên menu. Sau khi duyệt, vé rời danh sách hủy; xem
+          ghi chú mới ở bảng dưới (bộ lọc <strong>Đã hủy</strong> / <strong>Tất cả</strong>).
+        </p>
+      )}
 
       {statsErr && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 mb-2">
-          Thống kê vé: {statsErr} (bảng vẫn có thể tải riêng.)
+          Thống kê vé: {statsErr}
         </div>
       )}
       {loadErr && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 mb-2">
           <p className="font-semibold">Lỗi tải danh sách vé</p>
           <p className="mt-1">{loadErr}</p>
-          <p className="mt-2 text-xs text-red-700">
-            401/403: cần đăng nhập tài khoản QUAN_TRI. CSDL rỗng: chạy <code className="font-mono">database/data.sql</code> (bảng VeXe).
-          </p>
         </div>
       )}
 
@@ -488,7 +410,7 @@ const TicketManagement: React.FC = () => {
                 <th className="px-3 py-3 font-semibold">Mã vé</th>
                 <th className="px-3 py-3 font-semibold">Khách</th>
                 <th className="px-3 py-3 font-semibold">Tuyến / chuyến</th>
-                <th className="px-3 py-3 font-semibold">Ghi chú (DB)</th>
+                <th className="px-3 py-3 font-semibold">Ghi chú</th>
                 <th className="px-3 py-3 font-semibold">Tổng tiền</th>
                 <th className="px-3 py-3 font-semibold">Đặt lúc</th>
                 <th className="px-3 py-3 font-semibold">Trạng thái</th>
@@ -516,7 +438,7 @@ const TicketManagement: React.FC = () => {
                 </tr>
               ) : (
                 displayTickets.map((row) => {
-                  const gNote = pickGhiChuFromRow(row);
+                  const gNote = formatGhiChuAdminHienThi(row.trangThai, pickGhiChuFromRow(row));
                   return (
                     <tr key={row.id} className="border-t border-gray-100 hover:bg-gray-50/80">
                       <td className="px-3 py-3 font-mono text-gray-900">{row.maVe}</td>
@@ -554,7 +476,7 @@ const TicketManagement: React.FC = () => {
                           type="button"
                           onClick={() => void openEditModal(row)}
                           className="inline-flex items-center gap-1 text-[#ef5222] hover:underline text-xs font-medium"
-                          title="Sửa toàn bộ thông tin vé (từ CSDL)"
+                          title="Sửa vé"
                         >
                           <Pencil size={12} />
                           Sửa
@@ -571,151 +493,20 @@ const TicketManagement: React.FC = () => {
       </div>
 
       {modalId != null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 overflow-y-auto">
-          <form
-            onSubmit={onSaveTicket}
-            className="bg-white rounded-xl shadow-xl max-w-lg w-full p-4 space-y-3 my-8 max-h-[90vh] overflow-y-auto"
-          >
-            <div className="flex items-center gap-2 font-semibold text-gray-900">
-              <Ticket className="text-[#ef5222]" size={20} />
-              Sửa vé #{modalId} (dữ liệu từ CSDL)
-            </div>
-            {detailLoad && (
-              <p className="text-sm text-amber-800 bg-amber-50 rounded-lg px-3 py-2">Đang tải chi tiết vé & danh sách chuyến…</p>
-            )}
-            {modalErr && (
-              <p className="text-sm text-red-800 bg-red-50 rounded-lg px-3 py-2">
-                {modalErr} — cần backend mới (PUT/GET vé, bảng VeXe.ghi_chu).
-              </p>
-            )}
-
-            <div>
-              <label className="text-sm text-gray-700">Mã vé</label>
-              <input
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono"
-                value={form.maVe}
-                onChange={(e) => setForm((f) => ({ ...f, maVe: e.target.value }))}
-                required
-                disabled={detailLoad}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-gray-700">ID khách hàng (khach_hang_id)</label>
-              <input
-                type="number"
-                min={1}
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                value={form.khachHangId}
-                onChange={(e) => setForm((f) => ({ ...f, khachHangId: e.target.value }))}
-                required
-                disabled={detailLoad}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-gray-700">Chuyến xe</label>
-              <select
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                value={form.chuyenXeId}
-                onChange={(e) => setForm((f) => ({ ...f, chuyenXeId: e.target.value }))}
-                required
-                disabled={detailLoad}
-              >
-                <option value="">— Chọn chuyến —</option>
-                {tripOptions.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    #{t.id} {t.tenTuyen || ''} — {t.ngayDi || ''} ({t.bienSo || 'xe?'})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-sm text-gray-700">Mã ghế (cách nhau bởi dấu phẩy, khoảng trắng; ví dụ A01, A02)</label>
-              <textarea
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[72px] font-mono"
-                value={form.maGheText}
-                onChange={(e) => setForm((f) => ({ ...f, maGheText: e.target.value }))}
-                placeholder="A01, A02"
-                required
-                disabled={detailLoad}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-gray-700">Trạng thái vé</label>
-              <select
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                value={form.trangThai}
-                onChange={(e) => setForm((f) => ({ ...f, trangThai: e.target.value }))}
-                required
-                disabled={detailLoad}
-              >
-                {STATUSES.filter((s) => s !== 'ALL').map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s] || s}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-sm text-gray-700">Ghi chú (VeXe.ghi_chu)</label>
-              <textarea
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm min-h-[72px]"
-                value={form.ghiChu}
-                onChange={(e) => setForm((f) => ({ ...f, ghiChu: e.target.value }))}
-                disabled={detailLoad}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-gray-700">Ngày đặt (local)</label>
-              <input
-                type="datetime-local"
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                value={form.ngayDatLocal}
-                onChange={(e) => setForm((f) => ({ ...f, ngayDatLocal: e.target.value }))}
-                disabled={detailLoad}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-gray-700">Tổng tiền (VNĐ, để trống = tự tính: giá chuyến × số ghế)</label>
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                value={form.tongTienStr}
-                onChange={(e) => setForm((f) => ({ ...f, tongTienStr: e.target.value }))}
-                disabled={detailLoad}
-              />
-            </div>
-
-            <div className="flex flex-wrap justify-between gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => void onDeleteTicket()}
-                disabled={detailLoad || saving || deleting}
-                className="px-3 py-2 rounded-lg border border-red-200 text-red-700 text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
-              >
-                <Trash2 size={16} />
-                {deleting ? 'Đang xóa…' : 'Xóa vé'}
-              </button>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="px-4 py-2 rounded-lg border border-gray-300 text-sm"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={detailLoad || saving || deleting}
-                  className="px-4 py-2 rounded-lg bg-[#ef5222] text-white text-sm font-medium disabled:opacity-50"
-                >
-                  {saving ? 'Đang lưu…' : 'Lưu (PUT)'}
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
+        <TicketEditModal
+          isStaff={isStaff}
+          modalId={modalId}
+          detailLoad={detailLoad}
+          modalErr={modalErr}
+          tripOptions={tripOptions}
+          form={form}
+          setForm={setForm}
+          onSubmit={onSaveTicket}
+          onClose={closeModal}
+          onDelete={onDeleteTicket}
+          saving={saving}
+          deleting={deleting}
+        />
       )}
     </div>
   );

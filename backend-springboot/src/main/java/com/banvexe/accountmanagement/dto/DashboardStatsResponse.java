@@ -8,6 +8,10 @@ public record DashboardStatsResponse(
     long routes,
     long trips,
     long tickets,
-    long vehicles
+    long vehicles,
+    long lockedCustomers,
+    long lockedStaff,
+    /** Số bản ghi bảng KhachHang (hồ sơ), có thể khác số tài khoản KHACH_HANG. */
+    long totalKhachHang
 ) {
 }

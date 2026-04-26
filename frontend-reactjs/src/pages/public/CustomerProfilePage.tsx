@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../../api/client';
@@ -18,6 +18,7 @@ type CustomerProfileResponse = {
   phone: string | null;
   role: string;
   status: string;
+  avatarUrl?: string | null;
 };
 
 const CustomerProfilePage = () => {
@@ -32,6 +33,9 @@ const CustomerProfilePage = () => {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -43,6 +47,7 @@ const CustomerProfilePage = () => {
         setEmail(p?.email ?? '');
         setFullName(p?.fullName ?? '');
         setPhone((p?.phone ?? '').trim());
+        setAvatarUrl(p?.avatarUrl && p.avatarUrl.trim() ? p.avatarUrl : null);
       } catch (e) {
         const err = e as { response?: { data?: { message?: string } } };
         setError(err.response?.data?.message || 'Không thể tải thông tin tài khoản.');
@@ -93,6 +98,40 @@ const CustomerProfilePage = () => {
     })();
   };
 
+  const onPickAvatar = () => fileInputRef.current?.click();
+
+  const onAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!f.type.startsWith('image/')) {
+      setError('Chỉ chấp nhận file ảnh (JPEG, PNG, WebP, …).');
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setError('Ảnh tối đa 5MB.');
+      return;
+    }
+    void (async () => {
+      setUploadingAvatar(true);
+      setError('');
+      setSuccess('');
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        const res = await api.post<ApiResponse<{ url: string }>>('/api/accounts/me/avatar', fd);
+        const url = res.data?.data?.url;
+        if (url) setAvatarUrl(url);
+        setSuccess('Đã cập nhật ảnh đại diện.');
+      } catch (err) {
+        const er = err as { response?: { data?: { message?: string } } };
+        setError(er.response?.data?.message || 'Tải ảnh thất bại. Cấu hình Cloudinary (backend) hoặc thử lại sau.');
+      } finally {
+        setUploadingAvatar(false);
+      }
+    })();
+  };
+
   return (
     <CustomerAccountShell
       active="profile"
@@ -105,16 +144,34 @@ const CustomerProfilePage = () => {
         ) : (
           <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[220px_1fr]">
             <div className="flex flex-col items-center">
-              <div className="flex h-40 w-40 items-center justify-center rounded-full bg-[#e9f5fb] text-5xl font-bold text-[#86b9cf]">
-                {fullName.trim().charAt(0).toUpperCase() || 'U'}
-              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onAvatarFile}
+                disabled={uploadingAvatar}
+              />
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Ảnh đại diện"
+                  className="h-40 w-40 rounded-full object-cover border border-gray-200 shadow-sm"
+                />
+              ) : (
+                <div className="flex h-40 w-40 items-center justify-center rounded-full bg-[#e9f5fb] text-5xl font-bold text-[#86b9cf]">
+                  {fullName.trim().charAt(0).toUpperCase() || 'U'}
+                </div>
+              )}
               <button
                 type="button"
-                className="mt-5 rounded-full border border-gray-300 px-6 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                onClick={onPickAvatar}
+                disabled={uploadingAvatar}
+                className="mt-5 rounded-full border border-gray-300 px-6 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
               >
-                Chọn ảnh
+                {uploadingAvatar ? 'Đang tải lên...' : 'Chọn ảnh'}
               </button>
-              <p className="mt-3 text-center text-xs text-gray-400">Dung lượng file tối đa 1 MB định dạng .JPEG, .PNG</p>
+              <p className="mt-3 text-center text-xs text-gray-400">Ảnh tối đa 5MB (JPEG, PNG, WebP, …). Lưu trên Cloudinary.</p>
             </div>
 
             <div>

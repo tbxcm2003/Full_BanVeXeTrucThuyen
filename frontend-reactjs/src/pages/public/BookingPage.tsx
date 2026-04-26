@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { api } from '../../api/client';
 import { getStoredEmail, getStoredName, getStoredPhone, getStoredRole, getToken } from '../../auth/storage';
+import { collectHienThiByMaGhe, displaySeatCodes, getSeatLayoutByVehicleType, type SeatMapResponse, type SeatStatus } from '../../utils/seatMapLayout';
 
 type TripPayload = {
   id: number;
@@ -16,31 +17,6 @@ type TripPayload = {
   thoiGianDuKienPhut?: number;
   giaVe: number;
   loaiXe?: string;
-};
-
-type SeatStatus = {
-  maGhe: string;
-  daBan: boolean;
-};
-
-type SeatMapResponse = {
-  tongSoGhe: number;
-  ghe: SeatStatus[];
-};
-
-type UiSeat = {
-  /** Mã ghế gửi API — trùng GET /seats (generateSeatLabels phía server). */
-  maGhe: string;
-  daBan: boolean;
-  /** Nhãn hiển thị theo sơ đồ cũ (giường A/B, limousine/xe 01, 02, …) — tách khỏi mã hệ thống. */
-  hienThiGhe?: string;
-};
-
-type SeatLayout = {
-  tangDuoi?: UiSeat[][];
-  tangTren?: UiSeat[][];
-  single?: UiSeat[][];
-  singleType?: 'limousine' | 'seat';
 };
 
 type BookingState = {
@@ -67,6 +43,7 @@ type CustomerProfileResponse = {
   phone: string | null;
   role: string;
   status: string;
+  avatarUrl?: string | null;
 };
 
 type CreatedTicket = {
@@ -92,104 +69,6 @@ const toDateTimeMs = (trip?: TripPayload) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
 };
 
-const norm = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-
-const pickSeat = (apiSeats: SeatStatus[], idx: number): UiSeat => {
-  const s = apiSeats[idx];
-  if (!s) return { maGhe: '', daBan: true };
-  return { maGhe: s.maGhe, daBan: s.daBan };
-};
-
-const withHienThi = (ui: UiSeat, hienThiGhe: string): UiSeat => ({ ...ui, hienThiGhe });
-
-const buildSleeperLayout = (apiSeats: SeatStatus[]): SeatLayout => {
-  const total = apiSeats.length;
-  const lowerCount = Math.ceil(total / 2);
-  const upperCount = total - lowerCount;
-  const buildRows = (count: number, startIdx: number, prefix: 'A' | 'B') => {
-    const rows: UiSeat[][] = [];
-    if (count > 0) {
-      rows.push(
-        Array.from({ length: Math.min(2, count) }, (_, i) =>
-          withHienThi(pickSeat(apiSeats, startIdx + i), `${prefix}${String(i + 1).padStart(2, '0')}`),
-        ),
-      );
-    }
-    let used = rows[0]?.length ?? 0;
-    while (used < count) {
-      const rowSize = Math.min(3, count - used);
-      rows.push(
-        Array.from({ length: rowSize }, (_, i) =>
-          withHienThi(pickSeat(apiSeats, startIdx + used + i), `${prefix}${String(used + i + 1).padStart(2, '0')}`),
-        ),
-      );
-      used += rowSize;
-    }
-    return rows;
-  };
-  return { tangDuoi: buildRows(lowerCount, 0, 'A'), tangTren: buildRows(upperCount, lowerCount, 'B') };
-};
-
-const buildLimousineLayout = (apiSeats: SeatStatus[]): SeatLayout => {
-  const total = apiSeats.length;
-  const rows: UiSeat[][] = [];
-  const toSeat = (idx: number) => withHienThi(pickSeat(apiSeats, idx), String(idx + 1).padStart(2, '0'));
-  for (let idx = 0; idx < total; idx += 2) {
-    const row: UiSeat[] = [toSeat(idx)];
-    if (idx + 1 < total) row.push(toSeat(idx + 1));
-    rows.push(row);
-  }
-  return { single: rows, singleType: 'limousine' };
-};
-
-const buildSeatBusLayout = (apiSeats: SeatStatus[]): SeatLayout => {
-  const rows: UiSeat[][] = [];
-  const total = apiSeats.length;
-  const rowCount = Math.ceil(total / 4);
-  for (let row = 0; row < rowCount; row++) {
-    const base = row * 4;
-    const order = [3, 2, 1, 0];
-    const rowSeats = order
-      .map((offset) => {
-        const idx = base + offset;
-        if (idx >= total) return null;
-        return withHienThi(pickSeat(apiSeats, idx), String(idx + 1).padStart(2, '0'));
-      })
-      .filter((s): s is UiSeat => Boolean(s));
-    rows.push(rowSeats);
-  }
-  return { single: rows, singleType: 'seat' };
-};
-
-const getSeatLayoutByVehicleType = (vehicleType: string, apiSeats: SeatStatus[]): SeatLayout => {
-  const vt = norm(vehicleType || '');
-  if (vt.includes('giuong')) return buildSleeperLayout(apiSeats);
-  if (vt.includes('limousine') || vt.includes('limosine')) return buildLimousineLayout(apiSeats);
-  return buildSeatBusLayout(apiSeats);
-};
-
-const collectHienThiByMaGhe = (layout: SeatLayout) => {
-  const m = new Map<string, string>();
-  const visit = (rows?: UiSeat[][]) => {
-    rows?.forEach((row) =>
-      row.forEach((s) => {
-        if (s.maGhe) m.set(s.maGhe, s.hienThiGhe ?? s.maGhe);
-      }),
-    );
-  };
-  visit(layout.tangDuoi);
-  visit(layout.tangTren);
-  visit(layout.single);
-  return m;
-};
-
-const displaySeatCodes = (maGheList: string[], map: Map<string, string>) =>
-  maGheList.length ? maGheList.map((c) => map.get(c) ?? c).join(', ') : 'Chưa chọn';
-
 const BookingPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -210,6 +89,12 @@ const BookingPage = () => {
   const [email, setEmail] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [dangDatVe, setDangDatVe] = useState(false);
+
+  useEffect(() => {
+    const s = (location.state ?? {}) as BookingState;
+    setSelectedOutboundSeats(s.selectedSeatsOutbound ?? s.selectedSeats ?? []);
+    setSelectedReturnSeats(s.selectedSeatsReturn ?? []);
+  }, [location.key, location.state]);
 
   useEffect(() => {
     const role = getStoredRole();
@@ -412,7 +297,7 @@ const BookingPage = () => {
     map: SeatMapResponse | null,
     loading: boolean,
     selectedSeats: string[],
-    setSelectedSeats: React.Dispatch<React.SetStateAction<string[]>>,
+    setSelectedSeats: Dispatch<SetStateAction<string[]>>,
     title: string,
   ) => {
     if (!trip) return null;
@@ -439,6 +324,7 @@ const BookingPage = () => {
             {(() => {
               const layout = getSeatLayoutByVehicleType(trip.loaiXe || '', map.ghe);
               const renderSeatButton = (seat: SeatStatus & { hienThiGhe?: string }, sizeClass = 'h-9 w-9 md:h-10 md:w-10') => {
+                if (!seat.maGhe) return null;
                 const isSelected = selectedSeats.includes(seat.maGhe);
                 const cls = seat.daBan
                   ? 'cursor-not-allowed border-gray-300 bg-gray-200 text-gray-400'
@@ -454,37 +340,118 @@ const BookingPage = () => {
               return (
                 <>
                   {layout.tangDuoi && layout.tangTren && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
+                    <div className="mb-2 flex w-full flex-col items-center">
+                      <div className="grid w-full max-w-3xl grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+                        <div className="min-w-0">
                         <p className="mb-2 text-center text-xs font-semibold text-gray-700">Tầng dưới</p>
-                        <div className="space-y-2">{layout.tangDuoi.map((row, idx) => <div key={`duoi-${idx}`} className="grid w-fit grid-cols-3 gap-2">{row.length === 2 ? <><>{renderSeatButton(row[0] as SeatStatus)}</><div className="h-9 w-9 md:h-10 md:w-10" />{renderSeatButton(row[1] as SeatStatus)}</> : row.map((s) => renderSeatButton(s as SeatStatus))}</div>)}</div>
-                      </div>
-                      <div>
+                        <div className="space-y-2 max-w-md mx-auto">
+                          {layout.tangDuoi.map((row, rowIdx) => (
+                            <div key={`duoi-${rowIdx}`} className="grid w-fit grid-cols-3 gap-2 mx-auto">
+                              {row.length === 2 ? (
+                                <>
+                                  {renderSeatButton(row[0] as SeatStatus)}
+                                  <div className="h-9 w-9 md:h-10 md:w-10" />
+                                  {renderSeatButton(row[1] as SeatStatus)}
+                                </>
+                              ) : (
+                                row.map((s) => renderSeatButton(s as SeatStatus))
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        </div>
+                        <div className="min-w-0">
                         <p className="mb-2 text-center text-xs font-semibold text-gray-700">Tầng trên</p>
-                        <div className="space-y-2">{layout.tangTren.map((row, idx) => <div key={`tren-${idx}`} className="grid w-fit grid-cols-3 gap-2">{row.length === 2 ? <><>{renderSeatButton(row[0] as SeatStatus)}</><div className="h-9 w-9 md:h-10 md:w-10" />{renderSeatButton(row[1] as SeatStatus)}</> : row.map((s) => renderSeatButton(s as SeatStatus))}</div>)}</div>
+                        <div className="space-y-2 max-w-md mx-auto">
+                          {layout.tangTren.map((row, rowIdx) => (
+                            <div key={`tren-${rowIdx}`} className="grid w-fit grid-cols-3 gap-2 mx-auto">
+                              {row.length === 2 ? (
+                                <>
+                                  {renderSeatButton(row[0] as SeatStatus)}
+                                  <div className="h-9 w-9 md:h-10 md:w-10" />
+                                  {renderSeatButton(row[1] as SeatStatus)}
+                                </>
+                              ) : (
+                                row.map((s) => renderSeatButton(s as SeatStatus))
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {layout.tangDuoi && !layout.tangTren && (
+                    <div className="mb-2">
+                      <p className="mb-2 text-center text-xs font-semibold text-gray-700">Tầng dưới</p>
+                      <div className="space-y-2">
+                        {layout.tangDuoi.map((row, rowIdx) => (
+                          <div key={`duoi-only-${rowIdx}`} className="grid w-fit grid-cols-3 gap-2">
+                            {row.length === 2 ? (
+                              <>
+                                {renderSeatButton(row[0] as SeatStatus)}
+                                <div className="h-9 w-9 md:h-10 md:w-10" />
+                                {renderSeatButton(row[1] as SeatStatus)}
+                              </>
+                            ) : (
+                              row.map((s) => renderSeatButton(s as SeatStatus))
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {layout.tangTren && !layout.tangDuoi && (
+                    <div className="mb-2">
+                      <p className="mb-2 text-center text-xs font-semibold text-gray-700">Tầng trên</p>
+                      <div className="space-y-2">
+                        {layout.tangTren.map((row, rowIdx) => (
+                          <div key={`tren-only-${rowIdx}`} className="grid w-fit grid-cols-3 gap-2">
+                            {row.length === 2 ? (
+                              <>
+                                {renderSeatButton(row[0] as SeatStatus)}
+                                <div className="h-9 w-9 md:h-10 md:w-10" />
+                                {renderSeatButton(row[1] as SeatStatus)}
+                              </>
+                            ) : (
+                              row.map((s) => renderSeatButton(s as SeatStatus))
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
                   {layout.single && (
-                    <div className="space-y-2">
-                      {layout.single.map((row, idx) => (
-                        <div key={`single-${idx}`} className={layout.singleType === 'seat' ? 'flex items-center justify-center gap-6' : 'grid w-fit grid-cols-3 gap-2'}>
-                          {layout.singleType === 'seat' ? (
-                            <>
+                    <div>
+                      <p className="mb-2 text-center text-xs font-semibold text-gray-700">
+                        {layout.singleType === 'limousine' ? 'Sơ đồ Limousine' : 'Sơ đồ ghế'}
+                      </p>
+                      {layout.singleType === 'seat' ? (
+                        <div className="space-y-3 max-w-md mx-auto">
+                          {layout.single.map((row, rowIdx) => (
+                            <div key={`single-seat-${rowIdx}`} className="flex items-center justify-center gap-10">
                               <div className="flex gap-2">{row.slice(0, 2).map((s) => renderSeatButton(s as SeatStatus))}</div>
                               <div className="flex gap-2">{row.slice(2).map((s) => renderSeatButton(s as SeatStatus))}</div>
-                            </>
-                          ) : row.length === 2 ? (
-                            <>
-                              {renderSeatButton(row[0] as SeatStatus)}
-                              <div className="h-9 w-9 md:h-10 md:w-10" />
-                              {renderSeatButton(row[1] as SeatStatus)}
-                            </>
-                          ) : (
-                            row.map((s) => renderSeatButton(s as SeatStatus))
-                          )}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <div className="space-y-2 max-w-[220px] mx-auto">
+                          {layout.single.map((row, rowIdx) => (
+                            <div key={`single-limo-${rowIdx}`} className="grid grid-cols-3 gap-2 w-fit mx-auto">
+                              {row.length === 3 ? (
+                                row.map((s) => renderSeatButton(s as SeatStatus))
+                              ) : (
+                                <>
+                                  {renderSeatButton(row[0] as SeatStatus, 'h-9 w-9 md:h-10 md:w-10')}
+                                  <div className="h-9 w-9 md:h-10 md:w-10" />
+                                  {row[1] ? renderSeatButton(row[1] as SeatStatus, 'h-9 w-9 md:h-10 md:w-10') : <div className="h-9 w-9 md:h-10 md:w-10" />}
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>

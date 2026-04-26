@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { User, Phone, Mail, MapPin, Menu, X, UserCircle2, History, KeyRound, LogOut, ChevronDown } from 'lucide-react';
 import { clearAuth, getStoredEmail, getStoredName, getStoredRole } from '../../auth/storage';
+import type { PublicBranding } from '../../types/publicBranding';
 import logoImage from '../../assets/logo.png';
 
+const defaultBranding: PublicBranding = { logoUrl: null, bannerUrl: null };
+
 const PublicLayout = () => {
+  const [branding, setBranding] = useState<PublicBranding>(defaultBranding);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
@@ -32,6 +37,13 @@ const PublicLayout = () => {
   useEffect(() => {
     setIsProfileMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    void axios
+      .get<PublicBranding>('/api/public/branding')
+      .then((r) => setBranding(r.data))
+      .catch(() => setBranding(defaultBranding));
+  }, []);
 
   useEffect(() => {
     const onDocClick = (event: MouseEvent) => {
@@ -85,7 +97,11 @@ const PublicLayout = () => {
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center">
               <Link to="/" className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
-                <img src={logoImage} alt="Vina Go" className="h-10 w-auto object-contain" />
+                <img
+                  src={branding.logoUrl && branding.logoUrl.trim() ? branding.logoUrl : logoImage}
+                  alt="Vina Go"
+                  className="h-10 w-auto object-contain"
+                />
                 <span className="font-extrabold text-2xl tracking-tight leading-none">
                   <span className="text-[#0e5a32]">Vina</span>
                   <span className="text-[#e32222]">Go</span>
@@ -230,7 +246,7 @@ const PublicLayout = () => {
       </header>
 
       <main className="flex-grow">
-        <Outlet />
+        <Outlet context={branding} />
       </main>
 
       <footer className="bg-[#fdf8f5] text-gray-800 pt-12 pb-0 border-t border-gray-200">

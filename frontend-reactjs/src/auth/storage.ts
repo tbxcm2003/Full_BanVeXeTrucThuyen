@@ -3,6 +3,8 @@ const EMAIL_KEY = 'banvexe_admin_email';
 const ROLE_KEY = 'banvexe_admin_role';
 const NAME_KEY = 'banvexe_admin_name';
 const PHONE_KEY = 'banvexe_admin_phone';
+/** Lưu email từng đăng nhập thành công; không xóa khi đăng xuất (gợi ý lần sau + autocomplete). */
+const LAST_LOGIN_EMAIL_KEY = 'banvexe_last_login_email';
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -46,4 +48,23 @@ export function getStoredName(): string | null {
 
 export function getStoredPhone(): string | null {
   return localStorage.getItem(PHONE_KEY);
+}
+
+export function setLastLoginEmailForHint(email: string) {
+  const t = email?.trim();
+  if (t) {
+    try {
+      localStorage.setItem(LAST_LOGIN_EMAIL_KEY, t);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function getLastLoginEmailForHint(): string {
+  try {
+    return localStorage.getItem(LAST_LOGIN_EMAIL_KEY) || '';
+  } catch {
+    return '';
+  }
 }

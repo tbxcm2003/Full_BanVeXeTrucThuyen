@@ -16,3 +16,10 @@ Desktop.ini
 # Local DB / env (optional local files)
 backend-springboot/data/*.mv.db
 backend-springboot/data/*.trace.db
+
+# Secrets: copy từ .env.example, không commit .env
+.env
+backend-springboot/.env
+frontend-reactjs/.env
+frontend-reactjs/.env.local
+frontend-reactjs/.env.*.local

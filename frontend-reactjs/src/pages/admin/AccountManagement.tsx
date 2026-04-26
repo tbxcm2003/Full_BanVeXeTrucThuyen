@@ -8,11 +8,11 @@ import {
   Trash2,
   X,
   Save,
-  Users,
-  Activity,
   Briefcase,
   AlertCircle,
   RefreshCw,
+  Activity,
+  Users,
 } from 'lucide-react';
 import { api } from '../../api/client';
 import AdminPageStats from '../../components/admin/AdminPageStats';
@@ -40,8 +40,6 @@ const AccountManagement: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'CUSTOMER' | 'STAFF'>('CUSTOMER');
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'ADD' | 'EDIT'>('ADD');
   const [currentAccount, setCurrentAccount] = useState<Partial<Account>>({});
@@ -51,10 +49,13 @@ const AccountManagement: React.FC = () => {
   const [stats, setStats] = useState({
     customers: 0,
     staff: 0,
-    locked: 0,
+    lockedCustomers: 0,
+    lockedStaff: 0,
     total: 0,
   });
   const [tablePage, setTablePage] = useState(0);
+  const [accountTab, setAccountTab] = useState<'STAFF' | 'CUSTOMER'>('STAFF');
+  const [listError, setListError] = useState('');
 
   const apiUrl = '/api';
 
@@ -63,12 +64,22 @@ const AccountManagement: React.FC = () => {
     try {
       const res = await api.get('/api/admin/dashboard/stats');
       const d = res.data?.data;
+      let customersFromTaiKhoan: number | null = null;
+      try {
+        const kh = await api.get('/api/admin/tai-khoan/danh-sach-khach?page=0&size=1&search=');
+        customersFromTaiKhoan = toNum(kh.data?.data?.totalElements);
+      } catch {
+        /* fallback dashboard */
+      }
       if (d != null) {
+        const c = customersFromTaiKhoan !== null ? customersFromTaiKhoan : toNum(d.customers);
+        const s = toNum(d.staff);
         setStats({
-          customers: toNum(d.customers),
-          staff: toNum(d.staff),
-          locked: toNum(d.locked),
-          total: d.total != null ? toNum(d.total) : toNum(d.customers) + toNum(d.staff),
+          customers: c,
+          staff: s,
+          lockedCustomers: d.lockedCustomers != null ? toNum(d.lockedCustomers) : 0,
+          lockedStaff: d.lockedStaff != null ? toNum(d.lockedStaff) : 0,
+          total: d.total != null ? toNum(d.total) : c + s,
         });
       }
     } catch (e) {
@@ -78,35 +89,44 @@ const AccountManagement: React.FC = () => {
     }
   }, []);
 
-  const fetchAccounts = async (type: 'CUSTOMER' | 'STAFF') => {
+  const fetchAccounts = useCallback(async (type: 'CUSTOMER' | 'STAFF') => {
     try {
       setLoading(true);
-      const endpoint = type === 'CUSTOMER' ? '/admin/customers' : '/admin/staffs';
-      const response = await api.get(`${apiUrl}${endpoint}`);
-      
-      const rawData = response.data?.data?.content || response.data?.data || [];
-      
-      const transformed = rawData.map((item: any) => ({
+      setListError('');
+      const listUrl =
+        type === 'CUSTOMER'
+          ? `${apiUrl}/admin/tai-khoan/danh-sach-khach?page=0&size=100&search=`
+          : `${apiUrl}/admin/staffs?page=0&size=100&search=`;
+      const response = await api.get(listUrl);
+
+      const pageData = response.data?.data as { content?: unknown } | undefined;
+      const rawData = Array.isArray(pageData?.content) ? pageData.content : [];
+
+      const transformed: Account[] = (rawData as any[]).map((item: any) => ({
         id: item.id,
         email: item.email || '',
         name: item.fullName || 'N/A',
         phone: item.phone,
         role: type,
-        status: item.status === 'ACTIVE' || item.status === 1 ? 'ACTIVE' : 'INACTIVE',
+        status: (item.status === 'ACTIVE' || item.status === 1 ? 'ACTIVE' : 'INACTIVE') as Account['status'],
       }));
 
       setAccounts(transformed);
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu tài khoản:', error);
+      const msg =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Không tải được danh sách.';
+      setListError(msg);
       setAccounts([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiUrl]);
 
   useEffect(() => {
-    fetchAccounts(activeTab);
-  }, [activeTab]);
+    void fetchAccounts(accountTab);
+  }, [accountTab, fetchAccounts]);
 
   useEffect(() => {
     void fetchStats();
@@ -127,7 +147,11 @@ const AccountManagement: React.FC = () => {
 
   useEffect(() => {
     setTablePage(0);
-  }, [searchTerm, activeTab]);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    setTablePage(0);
+  }, [accountTab]);
 
   const accountTotalPages =
     filteredAccounts.length === 0 ? 0 : Math.max(1, Math.ceil(filteredAccounts.length / ADMIN_PAGE_SIZE));
@@ -148,7 +172,7 @@ const AccountManagement: React.FC = () => {
     if (mode === 'EDIT' && account) {
       setCurrentAccount({ ...account });
     } else {
-      setCurrentAccount({ role: activeTab, status: 'ACTIVE' });
+      setCurrentAccount({ role: accountTab === 'STAFF' ? 'STAFF' : 'CUSTOMER', status: 'ACTIVE' });
     }
     setIsModalOpen(true);
   };
@@ -191,7 +215,7 @@ const AccountManagement: React.FC = () => {
         });
       }
       
-      fetchAccounts(activeTab);
+      void fetchAccounts(accountTab);
       void fetchStats();
       closeModal();
     } catch (error: any) {
@@ -207,7 +231,7 @@ const AccountManagement: React.FC = () => {
     try {
       const endpoint = role === 'CUSTOMER' ? `/admin/customers/${id}` : `/admin/staffs/${id}`;
       await api.delete(`${apiUrl}${endpoint}`);
-      fetchAccounts(activeTab);
+      void fetchAccounts(accountTab);
       void fetchStats();
     } catch (error: any) {
       console.error('Error deleting account:', error);
@@ -220,7 +244,7 @@ const AccountManagement: React.FC = () => {
     try {
       const endpoint = role === 'CUSTOMER' ? `/admin/customers/${id}/status` : `/admin/staffs/${id}/status`;
       await api.put(`${apiUrl}${endpoint}`, { status: newStatus });
-      fetchAccounts(activeTab);
+      void fetchAccounts(accountTab);
       void fetchStats();
     } catch (error: any) {
       console.error('Error toggling status:', error);
@@ -233,7 +257,7 @@ const AccountManagement: React.FC = () => {
       <div className='flex flex-col sm:flex-row sm:items-center justify-between gap-3'>
         <h2 className='text-2xl font-bold text-gray-800 flex items-center gap-2.5'>
           <span className="w-1.5 h-6 bg-gradient-to-b from-[#ef5222] to-[#fd7e14] rounded-full inline-block"></span>
-          Quản Lý Tài Khoản
+          Quản lý tài khoản
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -254,35 +278,52 @@ const AccountManagement: React.FC = () => {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setAccountTab('STAFF')}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            accountTab === 'STAFF'
+              ? 'bg-[#ef5222] text-white shadow'
+              : 'bg-white text-gray-600 border border-gray-200 hover:border-[#ef5222]/40'
+          }`}
+        >
+          Tài khoản nhân viên
+        </button>
+        <button
+          type="button"
+          onClick={() => setAccountTab('CUSTOMER')}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+            accountTab === 'CUSTOMER'
+              ? 'bg-[#ef5222] text-white shadow'
+              : 'bg-white text-gray-600 border border-gray-200 hover:border-[#ef5222]/40'
+          }`}
+        >
+          Tài khoản khách hàng
+        </button>
+      </div>
+
       <AdminPageStats
         title="Thống kê tài khoản"
         loading={statsLoading}
         className="mb-2"
+        gridClassName="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 mb-2"
         items={[
-          { label: 'Tổng tài khoản', value: stats.total, icon: <Users size={22} />, color: 'text-[#ef5222]', bg: 'bg-[#fff0eb]', border: 'border-[#ffdbcf]' },
-          { label: 'Khách hàng', value: stats.customers, icon: <Activity size={22} />, color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-100' },
-          { label: 'Nhân viên', value: stats.staff, icon: <Briefcase size={22} />, color: 'text-green-500', bg: 'bg-green-50', border: 'border-green-100' },
-          { label: 'Bị khóa (INACTIVE)', value: stats.locked, icon: <AlertCircle size={22} />, color: 'text-red-500', bg: 'bg-red-50', border: 'border-red-100' },
+          { label: 'Tài khoản khách', value: stats.customers, icon: <Activity size={22} />, color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-100' },
+          { label: 'Tổng nhân viên', value: stats.staff, icon: <Briefcase size={22} />, color: 'text-green-500', bg: 'bg-green-50', border: 'border-green-100' },
+          { label: 'Khách bị khóa', value: stats.lockedCustomers, icon: <AlertCircle size={22} />, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
+          { label: 'Nhân viên bị khóa', value: stats.lockedStaff, icon: <AlertCircle size={22} />, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+          { label: 'Tổng tài khoản (KH + NV)', value: stats.total, icon: <Users size={22} />, color: 'text-gray-600', bg: 'bg-gray-50', border: 'border-gray-100' },
         ]}
       />
 
-      <div className='bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'>
-        <div className='p-3 border-b border-gray-200 bg-gray-50/60'>
-          <div className='flex space-x-1 bg-gray-200/50 p-1 rounded-lg w-full sm:w-auto'>
-            <button 
-              onClick={() => setActiveTab('CUSTOMER')}
-              className={`px-5 py-1.5 rounded-md font-medium text-sm transition-all flex-1 sm:flex-none ${activeTab === 'CUSTOMER' ? 'bg-white text-[#ef5222] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Khách Hàng
-            </button>
-            <button 
-              onClick={() => setActiveTab('STAFF')}
-              className={`px-5 py-1.5 rounded-md font-medium text-sm transition-all flex-1 sm:flex-none ${activeTab === 'STAFF' ? 'bg-white text-[#ef5222] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Nhân Viên
-            </button>
-          </div>
+      {listError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          {listError}
         </div>
+      )}
+
+      <div className='bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'>
         <div className="flex flex-col gap-2 border-b border-gray-100 bg-gray-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-gray-600">
             Khớp lọc: <span className="font-semibold text-gray-800">{filteredAccounts.length}</span> / {accounts.length} tài khoản (mỗi trang {ADMIN_PAGE_SIZE})
@@ -326,7 +367,11 @@ const AccountManagement: React.FC = () => {
                   <tr key={account.id} className='hover:bg-orange-50/40 transition-colors'>
                     <td className='px-5 py-3'>
                       <div className='flex items-center'>
-                        <div className={`h-8 w-8 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3 ${activeTab === 'STAFF' ? 'bg-green-500' : 'bg-[#ef5222]'}`}>
+                        <div
+                          className={`h-8 w-8 rounded-full flex items-center justify-center text-white font-semibold text-sm mr-3 ${
+                            account.role === 'CUSTOMER' ? 'bg-[#ef5222]' : 'bg-green-500'
+                          }`}
+                        >
                           {account.name ? account.name.charAt(0).toUpperCase() : '?'}
                         </div>
                         <div>

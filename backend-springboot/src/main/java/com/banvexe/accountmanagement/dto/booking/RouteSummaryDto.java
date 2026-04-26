@@ -10,6 +10,7 @@ public record RouteSummaryDto(
     BigDecimal khoangCach,
     Integer thoiGianDuKienPhut,
     BigDecimal giaVeCoBan,
-    String trangThai
+    String trangThai,
+    long soChuyenXe
 ) {
 }

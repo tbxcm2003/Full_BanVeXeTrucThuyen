@@ -11,13 +11,14 @@ import com.banvexe.accountmanagement.entity.ChuyenXe;
 import com.banvexe.accountmanagement.entity.ThanhToan;
 import com.banvexe.accountmanagement.entity.TicketStatus;
 import com.banvexe.accountmanagement.entity.TuyenXe;
-import com.banvexe.accountmanagement.entity.UserAccount;
+import com.banvexe.accountmanagement.entity.KhachHang;
 import com.banvexe.accountmanagement.entity.VeXe;
 import com.banvexe.accountmanagement.repository.ChiTietVeRepository;
 import com.banvexe.accountmanagement.repository.ChuyenXeRepository;
+import com.banvexe.accountmanagement.repository.KhachHangRepository;
 import com.banvexe.accountmanagement.repository.ThanhToanRepository;
-import com.banvexe.accountmanagement.repository.UserAccountRepository;
 import com.banvexe.accountmanagement.repository.VeXeRepository;
+import com.banvexe.accountmanagement.util.TicketGhiChuUtil;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.List;
@@ -29,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -38,7 +40,7 @@ public class ManagerTicketService {
     private static final int MAX_PAGE = 500;
 
     private final VeXeRepository veXeRepository;
-    private final UserAccountRepository userAccountRepository;
+    private final KhachHangRepository khachHangRepository;
     private final ChuyenXeRepository chuyenXeRepository;
     private final ChiTietVeRepository chiTietVeRepository;
     private final ThanhToanRepository thanhToanRepository;
@@ -46,14 +48,14 @@ public class ManagerTicketService {
 
     public ManagerTicketService(
         VeXeRepository veXeRepository,
-        UserAccountRepository userAccountRepository,
+        KhachHangRepository khachHangRepository,
         ChuyenXeRepository chuyenXeRepository,
         ChiTietVeRepository chiTietVeRepository,
         ThanhToanRepository thanhToanRepository,
         StaffBookingService staffBookingService
     ) {
         this.veXeRepository = veXeRepository;
-        this.userAccountRepository = userAccountRepository;
+        this.khachHangRepository = khachHangRepository;
         this.chuyenXeRepository = chuyenXeRepository;
         this.chiTietVeRepository = chiTietVeRepository;
         this.thanhToanRepository = thanhToanRepository;
@@ -105,11 +107,17 @@ public class ManagerTicketService {
         VeXe ve = veXeRepository.findById(ticketId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé"));
         ve.setTrangThai(req.status());
-        if (req.ghiChu() != null) {
+        if (req.status() == TicketStatus.DA_HUY) {
+            String noiDung = TicketGhiChuUtil.noiDungHuyTheoCapNhat(
+                StringUtils.hasText(req.ghiChu()) ? req.ghiChu().trim() : null,
+                "vé đã hủy theo cập nhật từ quản lý"
+            );
+            ve.setGhiChu(TicketGhiChuUtil.ghiChuHuyThanhCong(noiDung));
+        } else if (req.ghiChu() != null) {
             String g = req.ghiChu().trim();
             ve.setGhiChu(g.isEmpty() ? null : g);
         }
-        veXeRepository.save(ve);
+        veXeRepository.saveAndFlush(ve);
         return staffBookingService.getTicketDetailById(ticketId);
     }
 
@@ -131,7 +139,7 @@ public class ManagerTicketService {
         if (veXeRepository.existsByMaVeAndIdNot(m, ve.getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mã vé đã tồn tại: " + m);
         }
-        userAccountRepository.findById(req.khachHangId())
+        khachHangRepository.findById(req.khachHangId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
         ChuyenXe chuyen = chuyenXeRepository.findByIdWithDetails(req.chuyenXeId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến"));
@@ -182,7 +190,13 @@ public class ManagerTicketService {
         ve.setKhachHangId(req.khachHangId());
         ve.setChuyenXe(chuyen);
         ve.setTrangThai(req.trangThai());
-        if (req.ghiChu() == null) {
+        if (req.trangThai() == TicketStatus.DA_HUY) {
+            String noiDung = TicketGhiChuUtil.noiDungHuyTheoCapNhat(
+                StringUtils.hasText(req.ghiChu()) ? req.ghiChu().trim() : null,
+                "vé đã hủy theo cập nhật từ quản lý"
+            );
+            ve.setGhiChu(TicketGhiChuUtil.ghiChuHuyThanhCong(noiDung));
+        } else if (req.ghiChu() == null) {
             ve.setGhiChu(null);
         } else {
             String g = req.ghiChu().trim();
@@ -193,7 +207,7 @@ public class ManagerTicketService {
         }
         ve.setSoLuongGhe(newSeats.size());
         ve.setTongTien(tong);
-        veXeRepository.save(ve);
+        veXeRepository.saveAndFlush(ve);
 
         chiTietVeRepository.deleteByVeId(ve.getId());
         for (String seat : newSeats) {
@@ -229,7 +243,7 @@ public class ManagerTicketService {
         if (c != null && t == null) {
             log.warn("VeXe #{}: chuyen #{} thieu tuyen; kiem tra FK chuyen.tuyen_xe_id.", v.getId(), c.getId());
         }
-        UserAccount kh = userAccountRepository.findById(v.getKhachHangId()).orElse(null);
+        KhachHang kh = khachHangRepository.findById(v.getKhachHangId()).orElse(null);
         String tenTuyen;
         if (t != null && t.getTenTuyen() != null) {
             tenTuyen = t.getTenTuyen();

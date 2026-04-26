@@ -1,45 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import AdminListPagination, { ADMIN_PAGE_SIZE } from '../../components/admin/AdminListPagination';
-import { Bus, Plus, Pencil, Trash2, X, Save, RefreshCw, BusFront, Timer, Play, Flag, OctagonX, Search } from 'lucide-react';
+import { Plus, Pencil, Trash2, RefreshCw, BusFront, Timer, Play, Flag, OctagonX, Search } from 'lucide-react';
 import { api } from '../../api/client';
 import AdminPageStats from '../../components/admin/AdminPageStats';
-
-type RouteOpt = { id: number; tenTuyen: string; diemDi: string; diemDen: string };
-type VehicleOpt = { id: number; bienSo: string; loaiXe: string; soGhe: number };
-type TripRow = {
-  id: number;
-  tuyenXeId: number;
-  tenTuyen: string;
-  diemDi: string;
-  diemDen: string;
-  ngayDi: string;
-  gioDi: string | { hour?: number; minute?: number; second?: number };
-  giaVe: number | string;
-  xeId: number;
-  loaiXe: string;
-  bienSo: string;
-  tongSoGhe: number;
-  soGheTrong: number;
-  trangThaiChuyen: string;
-};
-
-function formatTimeForInput(gioDi: TripRow['gioDi']): string {
-  if (gioDi == null) return '06:00';
-  if (typeof gioDi === 'string') {
-    const m = gioDi.match(/^(\d{1,2}):(\d{2})/);
-    if (m) return `${m[1].padStart(2, '0')}:${m[2]}`;
-    return '06:00';
-  }
-  const h = gioDi.hour ?? 0;
-  const mi = gioDi.minute ?? 0;
-  return `${String(h).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
-}
-
-function toLocalTimeString(hhmm: string): string {
-  const t = hhmm.trim();
-  if (t.length === 5 && t[2] === ':') return `${t}:00`;
-  return t;
-}
+import { getStoredRole } from '../../auth/storage';
+import type { RouteOpt, TripFormState, TripRow, VehicleOpt } from './tripManagementTypes';
+import { formatTimeForInput, toLocalTimeString, TRIP_STATUS_OPTIONS } from './tripManagementShared';
+import TripFormModal from './TripFormModal';
 
 const TripManagement: React.FC = () => {
   const [trips, setTrips] = useState<TripRow[]>([]);
@@ -48,18 +15,20 @@ const TripManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<TripFormState>({
     tuyenXeId: '',
     xeId: '',
     ngayDi: '',
     gioDi: '06:00',
     giaVe: '',
-    trangThai: 'CHUA_KHOI_HANH' as 'CHUA_KHOI_HANH' | 'DANG_CHAY' | 'HOAN_THANH' | 'HUY_CHUYEN',
+    trangThai: 'CHUA_KHOI_HANH',
   });
   const [saving, setSaving] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [tripSearch, setTripSearch] = useState('');
   const [tablePage, setTablePage] = useState(0);
+  const isStaff = getStoredRole() === 'NHAN_VIEN';
+  const [savingStatusId, setSavingStatusId] = useState<number | null>(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -205,7 +174,7 @@ const TripManagement: React.FC = () => {
       ngayDi: t.ngayDi,
       gioDi: formatTimeForInput(t.gioDi),
       giaVe: String(t.giaVe),
-      trangThai: (t.trangThaiChuyen as typeof form.trangThai) || 'CHUA_KHOI_HANH',
+      trangThai: (t.trangThaiChuyen as TripFormState['trangThai']) || 'CHUA_KHOI_HANH',
     });
     setModal('edit');
   };
@@ -285,6 +254,21 @@ const TripManagement: React.FC = () => {
     }
   };
 
+  const onStaffTripStatus = async (tripId: number, trangThai: string) => {
+    setSavingStatusId(tripId);
+    try {
+      await api.patch(`/api/staff/booking/trips/${tripId}/status`, { trangThai });
+      await loadAll();
+    } catch (err: unknown) {
+      const m =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+        'Không thể cập nhật trạng thái chuyến.';
+      window.alert(m);
+    } finally {
+      setSavingStatusId(null);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-5 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -301,19 +285,21 @@ const TripManagement: React.FC = () => {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             Tải lại
           </button>
-          <button
-            type="button"
-            onClick={openAdd}
-            disabled={loading || routes.length === 0 || vehicles.length === 0}
-            title={
-              routes.length === 0 || vehicles.length === 0
-                ? 'Cần ít nhất một tuyến và một xe trong hệ thống'
-                : undefined
-            }
-            className="flex items-center gap-2 bg-[#ef5222] hover:bg-[#d94219] text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Plus size={18} /> Thêm chuyến
-          </button>
+          {!isStaff && (
+            <button
+              type="button"
+              onClick={openAdd}
+              disabled={loading || routes.length === 0 || vehicles.length === 0}
+              title={
+                routes.length === 0 || vehicles.length === 0
+                  ? 'Cần ít nhất một tuyến và một xe trong hệ thống'
+                  : undefined
+              }
+              className="flex items-center gap-2 bg-[#ef5222] hover:bg-[#d94219] text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus size={18} /> Thêm chuyến
+            </button>
+          )}
         </div>
       </div>
 
@@ -329,17 +315,18 @@ const TripManagement: React.FC = () => {
           { label: 'Hủy chuyến', value: tripStats.HUY_CHUYEN, icon: <OctagonX size={22} />, color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200' },
         ]}
       />
-      <p className="text-xs text-gray-500 -mt-2 mb-2">Danh sách sắp xếp theo ID; ô tìm kiếm lọc theo ID, tuyến, ngày giờ, biển số, trạng thái…</p>
 
       {loadErr && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <p className="font-semibold">Lỗi tải chuyến / tuyến / xe</p>
           <p className="mt-1">{loadErr}</p>
-          <p className="mt-2 text-xs text-red-700">
-            Gợi ý: chạy Vite (proxy /api → backend), đăng nhập tài khoản QUAN_TRI, kiểm tra bảng ChuyenXe / TuyenXe / Xe trong CSDL; import file
-            <code className="mx-0.5 font-mono"> database/data.sql </code> nếu bảng đang rỗng.
-          </p>
         </div>
+      )}
+
+      {isStaff && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          Tài khoản nhân viên: chỉ được cập nhật <strong>trạng thái chuyến</strong> từ danh sách bên dưới, không tạo/sửa/xóa chuyến.
+        </p>
       )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -382,7 +369,7 @@ const TripManagement: React.FC = () => {
               ) : trips.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
-                    {loadErr ? '—' : 'Chưa có chuyến nào. Nếu CSDL mới, import database/data.sql hoặc tạo chuyến từ form (ngày giờ phải trong tương lai).'}
+                    {loadErr ? '—' : 'Chưa có chuyến nào.'}
                   </td>
                 </tr>
               ) : displayTrips.length === 0 ? (
@@ -414,29 +401,48 @@ const TripManagement: React.FC = () => {
                       {t.soGheTrong}/{t.tongSoGhe}
                     </td>
                     <td className="px-3 py-3">
-                      <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-900">
-                        {t.trangThaiChuyen}
-                      </span>
+                      {isStaff ? (
+                        <select
+                          className="max-w-[160px] rounded border border-amber-200 bg-white px-1.5 py-1 text-xs"
+                          value={t.trangThaiChuyen}
+                          disabled={savingStatusId === t.id}
+                          onChange={(e) => void onStaffTripStatus(t.id, e.target.value)}
+                        >
+                          {TRIP_STATUS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-900">
+                          {t.trangThaiChuyen}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(t)}
-                          className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
-                          title="Sửa"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void onDelete(t)}
-                          className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"
-                          title="Xóa chuyến (kèm vé liên quan)"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      {isStaff ? (
+                        <span className="text-xs text-gray-400">—</span>
+                      ) : (
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(t)}
+                            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                            title="Sửa"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void onDelete(t)}
+                            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"
+                            title="Xóa chuyến (kèm vé liên quan)"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -447,129 +453,17 @@ const TripManagement: React.FC = () => {
         <AdminListPagination page={tablePage} total={displayTrips.length} onPageChange={setTablePage} />
       </div>
 
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
-              <h3 className="font-semibold text-lg flex items-center gap-2 text-gray-900">
-                <Bus className="text-[#ef5222]" size={20} />
-                {modal === 'add' ? 'Thêm chuyến' : 'Sửa chuyến'}
-              </h3>
-              <button type="button" onClick={closeModal} className="p-1 rounded-lg hover:bg-gray-100">
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={onSubmit} className="p-4 space-y-3">
-              <div>
-                <label className="text-sm text-gray-700">Tuyến</label>
-                <select
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  value={form.tuyenXeId}
-                  onChange={(e) => setForm((f) => ({ ...f, tuyenXeId: e.target.value }))}
-                  required
-                >
-                  <option value="">— Chọn —</option>
-                  {routes.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.tenTuyen} ({r.diemDi} → {r.diemDen})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-sm text-gray-700">Xe</label>
-                <select
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  value={form.xeId}
-                  onChange={(e) => setForm((f) => ({ ...f, xeId: e.target.value }))}
-                  required
-                >
-                  <option value="">— Chọn —</option>
-                  {vehicles.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.bienSo} — {v.loaiXe} ({v.soGhe} chỗ)
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-sm text-gray-700">Ngày đi</label>
-                  <input
-                    type="date"
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    value={form.ngayDi}
-                    onChange={(e) => setForm((f) => ({ ...f, ngayDi: e.target.value }))}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-sm text-gray-700">Giờ đi</label>
-                  <input
-                    type="time"
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    value={form.gioDi}
-                    onChange={(e) => setForm((f) => ({ ...f, gioDi: e.target.value }))}
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-sm text-gray-700">Giá vé (VNĐ)</label>
-                <input
-                  type="number"
-                  min={0}
-                  step={1000}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  value={form.giaVe}
-                  onChange={(e) => setForm((f) => ({ ...f, giaVe: e.target.value }))}
-                  required
-                />
-              </div>
-              {modal === 'edit' && (
-                <div>
-                  <label className="text-sm text-gray-700">Trạng thái chuyến</label>
-                  <select
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    value={form.trangThai}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        trangThai: e.target.value as typeof form.trangThai,
-                      }))
-                    }
-                  >
-                    <option value="CHUA_KHOI_HANH">CHUA_KHOI_HANH</option>
-                    <option value="DANG_CHAY">DANG_CHAY</option>
-                    <option value="HOAN_THANH">HOAN_THANH</option>
-                    <option value="HUY_CHUYEN">HUY_CHUYEN</option>
-                  </select>
-                </div>
-              )}
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  className="px-4 py-2 rounded-lg border border-gray-300 text-sm"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 rounded-lg bg-[#ef5222] text-white text-sm font-medium flex items-center gap-2 disabled:opacity-50"
-                >
-                  {saving ? (
-                    <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <Save size={16} />
-                  )}
-                  Lưu
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {modal && !isStaff && (
+        <TripFormModal
+          mode={modal}
+          form={form}
+          setForm={setForm}
+          routes={routes}
+          vehicles={vehicles}
+          onSubmit={onSubmit}
+          onClose={closeModal}
+          saving={saving}
+        />
       )}
     </div>
   );

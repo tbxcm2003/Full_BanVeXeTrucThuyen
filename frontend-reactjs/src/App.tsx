@@ -2,12 +2,16 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import AdminLayout from './components/layout/AdminLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import RequireAuth from './components/auth/RequireAuth';
+import RequireAdmin from './components/auth/RequireAdmin';
 import LoginPage from './pages/admin/LoginPage';
+import AdminRoleHome from './pages/admin/AdminRoleHome';
 import AccountManagement from './pages/admin/AccountManagement';
+import CustomerAccountManagement from './pages/admin/CustomerAccountManagement';
 import RouteManagement from './pages/admin/RouteManagement';
 import TripManagement from './pages/admin/TripManagement';
 import TicketManagement from './pages/admin/TicketManagement';
 import VehicleManagement from './pages/admin/VehicleManagement';
+import CancelRequestsPage from './pages/admin/CancelRequestsPage';
 
 // Public Pages
 import HomePage from './pages/public/HomePage';
@@ -53,12 +57,28 @@ function App() {
             </RequireAuth>
           }
         >
-          <Route index element={<Navigate to='/admin/accounts' replace />} />
-          <Route path='accounts' element={<AccountManagement />} />
+          <Route index element={<AdminRoleHome />} />
+          <Route path='customers' element={<CustomerAccountManagement />} />
+          <Route path='cancel-requests' element={<CancelRequestsPage />} />
+          <Route
+            path='accounts'
+            element={
+              <RequireAdmin>
+                <AccountManagement />
+              </RequireAdmin>
+            }
+          />
           <Route path='routes' element={<RouteManagement />} />
           <Route path='trips' element={<TripManagement />} />
           <Route path='tickets' element={<TicketManagement />} />
-          <Route path='vehicles' element={<VehicleManagement />} />
+          <Route
+            path='vehicles'
+            element={
+              <RequireAdmin>
+                <VehicleManagement />
+              </RequireAdmin>
+            }
+          />
         </Route>
       </Routes>
     </Router>

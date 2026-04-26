@@ -5,6 +5,7 @@ import com.banvexe.accountmanagement.entity.VeXe;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -53,4 +54,16 @@ public interface VeXeRepository extends JpaRepository<VeXe, Integer> {
 
     @Query("select v from VeXe v left join fetch v.chuyenXe c where v.trangThai = :st order by v.ngayDat desc")
     List<VeXe> findByTrangThaiForManagerListWithFetches(@Param("st") TicketStatus st);
+
+    /**
+     * Ghi đè trạng thái + ghi chú một cách tường minh (tránh trường hợp bản thực thể
+     * đồng bộ từ cache không phát sinh UPDATE đúng trường ghi chú).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update VeXe v set v.ghiChu = :g, v.trangThai = :s where v.id = :id")
+    int updateGhiChuAndTrangThaiById(
+        @Param("id") Integer id,
+        @Param("g") String g,
+        @Param("s") TicketStatus s
+    );
 }

@@ -77,6 +77,7 @@ public class ManagerRouteService {
     }
 
     private RouteSummaryDto toDto(TuyenXe t) {
+        long nChuyen = chuyenXeRepository.countByTuyenXe_Id(t.getId());
         return new RouteSummaryDto(
             t.getId(),
             t.getTenTuyen() != null ? t.getTenTuyen() : "",
@@ -85,7 +86,8 @@ public class ManagerRouteService {
             t.getKhoangCach(),
             t.getThoiGianDuKien(),
             t.getGiaVeCoBan(),
-            t.getTrangThai() != null ? t.getTrangThai().name() : "INACTIVE"
+            t.getTrangThai() != null ? t.getTrangThai().name() : "INACTIVE",
+            nChuyen
         );
     }
 }

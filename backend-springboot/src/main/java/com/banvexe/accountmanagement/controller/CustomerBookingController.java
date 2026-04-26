@@ -65,7 +65,7 @@ public class CustomerBookingController {
         Authentication authentication,
         @PathVariable Integer ticketId
     ) {
-        customerTicketService.cancelOrRequestCancel(authentication.getName(), ticketId);
-        return ResponseEntity.ok(ApiResponse.success("Đã xử lý yêu cầu hủy", null));
+        String msg = customerTicketService.cancelOrRequestCancel(authentication.getName(), ticketId);
+        return ResponseEntity.ok(ApiResponse.success(msg, null));
     }
 }

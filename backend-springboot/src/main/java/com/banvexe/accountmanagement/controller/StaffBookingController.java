@@ -1,7 +1,9 @@
 package com.banvexe.accountmanagement.controller;
 
 import com.banvexe.accountmanagement.dto.ApiResponse;
+import com.banvexe.accountmanagement.dto.RejectCancelRequest;
 import com.banvexe.accountmanagement.dto.booking.StaffTicketDetailDto;
+import java.util.List;
 import com.banvexe.accountmanagement.dto.booking.StaffUpdateTicketRequest;
 import com.banvexe.accountmanagement.dto.booking.TripRunStatusUpdateRequest;
 import com.banvexe.accountmanagement.service.booking.StaffBookingService;
@@ -44,10 +46,29 @@ public class StaffBookingController {
         );
     }
 
+    @GetMapping("/cancel-requests/pending-count")
+    public ResponseEntity<ApiResponse<Long>> countCancelRequests() {
+        return ResponseEntity.ok(ApiResponse.success(staffBookingService.countCancelRequests()));
+    }
+
+    @GetMapping("/cancel-requests")
+    public ResponseEntity<ApiResponse<List<StaffTicketDetailDto>>> listCancelRequests() {
+        return ResponseEntity.ok(ApiResponse.success(staffBookingService.listCancelRequests()));
+    }
+
     @PostMapping("/tickets/{ticketId}/approve-cancel")
     public ResponseEntity<ApiResponse<Void>> approveCancel(@PathVariable Integer ticketId) {
         staffBookingService.approveCancelTicket(ticketId);
         return ResponseEntity.ok(ApiResponse.success("Đã duyệt hủy vé", null));
+    }
+
+    @PostMapping("/tickets/{ticketId}/reject-cancel")
+    public ResponseEntity<ApiResponse<Void>> rejectCancel(
+        @PathVariable Integer ticketId,
+        @Valid @RequestBody RejectCancelRequest request
+    ) {
+        staffBookingService.rejectCancelTicket(ticketId, request.lyDo());
+        return ResponseEntity.ok(ApiResponse.success("Đã từ chối yêu cầu hủy vé", null));
     }
 
     @PatchMapping("/trips/{chuyenId}/status")

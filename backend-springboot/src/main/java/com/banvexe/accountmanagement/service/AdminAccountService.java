@@ -14,10 +14,12 @@ import com.banvexe.accountmanagement.dto.UpdateCustomerStatusRequest;
 import com.banvexe.accountmanagement.dto.UpdateStaffRequest;
 import com.banvexe.accountmanagement.dto.UpdateStaffStatusRequest;
 import com.banvexe.accountmanagement.entity.AccountStatus;
+import com.banvexe.accountmanagement.entity.KhachHang;
 import com.banvexe.accountmanagement.entity.UserAccount;
 import com.banvexe.accountmanagement.entity.UserAccount.UserRole;
 import com.banvexe.accountmanagement.entity.VeXe;
 import com.banvexe.accountmanagement.repository.ChuyenXeRepository;
+import com.banvexe.accountmanagement.repository.KhachHangRepository;
 import com.banvexe.accountmanagement.repository.TuyenXeRepository;
 import com.banvexe.accountmanagement.repository.UserAccountRepository;
 import com.banvexe.accountmanagement.repository.VeXeRepository;
@@ -25,11 +27,14 @@ import com.banvexe.accountmanagement.repository.XeRepository;
 import com.banvexe.accountmanagement.util.PhoneNumberUtil;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -38,6 +43,7 @@ public class AdminAccountService {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final UserAccountRepository userAccountRepository;
+    private final KhachHangRepository khachHangRepository;
     private final VeXeRepository veXeRepository;
     private final TuyenXeRepository tuyenXeRepository;
     private final ChuyenXeRepository chuyenXeRepository;
@@ -46,6 +52,7 @@ public class AdminAccountService {
 
     public AdminAccountService(
         UserAccountRepository userAccountRepository,
+        KhachHangRepository khachHangRepository,
         VeXeRepository veXeRepository,
         TuyenXeRepository tuyenXeRepository,
         ChuyenXeRepository chuyenXeRepository,
@@ -53,6 +60,7 @@ public class AdminAccountService {
         PasswordService passwordService
     ) {
         this.userAccountRepository = userAccountRepository;
+        this.khachHangRepository = khachHangRepository;
         this.veXeRepository = veXeRepository;
         this.tuyenXeRepository = tuyenXeRepository;
         this.chuyenXeRepository = chuyenXeRepository;
@@ -72,32 +80,41 @@ public class AdminAccountService {
         long trips = chuyenXeRepository.count();
         long tickets = veXeRepository.count();
         long vehicles = xeRepository.count();
+        long totalKhachHang = khachHangRepository.count();
         return new DashboardStatsResponse(
-            customers, staff, locked, customers + staff, routes, trips, tickets, vehicles);
+            customers, staff, locked, customers + staff, routes, trips, tickets, vehicles, lockedCustomers, lockedStaff,
+            totalKhachHang);
     }
 
     public PageResponse<CustomerSummaryResponse> listCustomers(String search, int page, int size) {
-        Page<UserAccount> result = userAccountRepository.findByRoleWithSearch(
+        Page<KhachHang> result = khachHangRepository.searchByKeyword(
+            blankToNullSearch(search),
+            PageRequest.of(normalizePage(page), normalizeSize(size), Sort.by(Sort.Direction.DESC, "id"))
+        );
+        return toPageResponse(result, k -> toCustomerSummary(k, userAccountRepository.findByKhachHang_Id(k.getId())));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<CustomerSummaryResponse> listCustomerTaiKhoan(String search, int page, int size) {
+        Page<UserAccount> result = userAccountRepository.findAccountsByRoleWithKhachHang(
             UserRole.KHACH_HANG,
             blankToNullSearch(search),
             PageRequest.of(normalizePage(page), normalizeSize(size), Sort.by(Sort.Direction.DESC, "id"))
         );
-        return toPageResponse(result, this::toCustomerSummary);
+        return toPageResponseUser(
+            result,
+            u -> toCustomerSummary(Objects.requireNonNull(u.getKhachHang(), "khachHang"), Optional.of(u))
+        );
     }
 
-    public AdminCustomerDetailResponse getCustomerDetail(Integer customerId) {
-        UserAccount user = userAccountRepository.findById(customerId)
+    public AdminCustomerDetailResponse getCustomerDetail(Integer khachHangId) {
+        KhachHang k = khachHangRepository.findById(khachHangId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
-
-        if (user.getRole() != UserRole.KHACH_HANG) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải khách hàng");
-        }
-
-        List<TicketSummaryResponse> tickets = veXeRepository.findAllByKhachHangIdWithRoute(customerId).stream()
+        Optional<UserAccount> acc = userAccountRepository.findByKhachHang_Id(k.getId());
+        List<TicketSummaryResponse> tickets = veXeRepository.findAllByKhachHangIdWithRoute(khachHangId).stream()
             .map(this::toTicketSummary)
             .toList();
-
-        return new AdminCustomerDetailResponse(toCustomerProfile(user), tickets);
+        return new AdminCustomerDetailResponse(toCustomerProfile(k, acc.orElse(null)), tickets);
     }
 
     public PageResponse<StaffSummaryResponse> listStaffs(String search, int page, int size) {
@@ -106,7 +123,7 @@ public class AdminAccountService {
             blankToNullSearch(search),
             PageRequest.of(normalizePage(page), normalizeSize(size), Sort.by(Sort.Direction.DESC, "id"))
         );
-        return toPageResponse(result, this::toStaffSummary);
+        return toPageResponseUser(result, this::toStaffSummary);
     }
 
     public StaffSummaryResponse createStaff(CreateStaffRequest request) {
@@ -119,6 +136,9 @@ public class AdminAccountService {
         String phone = parseVnPhoneOrNull(request.phone());
         if (phone != null && userAccountRepository.findByPhone(phone).isPresent()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
+        }
+        if (phone != null && khachHangRepository.existsByPhone(phone)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng bởi hồ sơ khách hàng");
         }
 
         UserAccount staff = new UserAccount();
@@ -145,6 +165,9 @@ public class AdminAccountService {
         if (phone != null && userAccountRepository.existsByPhoneAndIdNot(phone, staffId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
         }
+        if (phone != null && khachHangRepository.existsByPhone(phone)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại trùng với hồ sơ khách hàng");
+        }
 
         staff.setFullName(request.fullName().trim());
         staff.setPhone(phone);
@@ -164,69 +187,72 @@ public class AdminAccountService {
         userAccountRepository.save(staff);
     }
 
+    @Transactional
     public CustomerSummaryResponse createCustomer(CreateCustomerRequest request) {
         String email = normalizeEmail(request.email());
 
         if (userAccountRepository.findByEmail(email).isPresent()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tên đăng nhập đã tồn tại");
         }
+        if (khachHangRepository.findByEmail(email).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email hồ sơ đã tồn tại");
+        }
 
         String phone = parseVnPhoneOrNull(request.phone());
-        if (phone != null && userAccountRepository.findByPhone(phone).isPresent()) {
+        if (phone != null && khachHangRepository.existsByPhone(phone)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
         }
+
+        KhachHang k = new KhachHang();
+        k.setEmail(email);
+        k.setPhone(phone);
+        k.setFullName(request.fullName().trim());
+        k.setStatus(AccountStatus.ACTIVE);
+        k = khachHangRepository.save(k);
 
         UserAccount customer = new UserAccount();
+        customer.setKhachHang(k);
         customer.setEmail(email);
         customer.setPasswordHash(passwordService.encode(request.password()));
-        customer.setFullName(request.fullName().trim());
-        customer.setPhone(phone);
         customer.setRole(UserRole.KHACH_HANG);
         customer.setStatus(AccountStatus.ACTIVE);
-
         userAccountRepository.save(customer);
-        return toCustomerSummary(customer);
+        return toCustomerSummary(k, Optional.of(customer));
     }
 
+    @Transactional
     public CustomerSummaryResponse updateCustomer(Integer customerId, UpdateCustomerRequest request) {
-        UserAccount customer = userAccountRepository.findById(customerId)
+        KhachHang k = khachHangRepository.findById(customerId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
 
-        if (customer.getRole() != UserRole.KHACH_HANG) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải khách hàng");
-        }
-
-        customer.setFullName(request.fullName().trim());
+        k.setFullName(request.fullName().trim());
         String phone = parseVnPhoneOrNull(request.phone());
-        if (phone != null && userAccountRepository.existsByPhoneAndIdNot(phone, customerId)) {
+        if (phone != null && khachHangRepository.existsByPhoneAndIdNot(phone, customerId)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại đã được sử dụng");
         }
-        customer.setPhone(phone);
-        userAccountRepository.save(customer);
-        return toCustomerSummary(customer);
+        k.setPhone(phone);
+        khachHangRepository.save(k);
+        return toCustomerSummary(k, userAccountRepository.findByKhachHang_Id(k.getId()));
     }
 
+    @Transactional
     public void updateCustomerStatus(Integer customerId, UpdateCustomerStatusRequest request) {
-        UserAccount customer = userAccountRepository.findById(customerId)
+        KhachHang k = khachHangRepository.findById(customerId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
-
-        if (customer.getRole() != UserRole.KHACH_HANG) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải khách hàng");
-        }
-
-        customer.setStatus(request.status());
-        userAccountRepository.save(customer);
+        k.setStatus(request.status());
+        khachHangRepository.save(k);
+        userAccountRepository.findByKhachHang_Id(k.getId()).ifPresent(u -> {
+            u.setStatus(request.status());
+            userAccountRepository.save(u);
+        });
     }
 
+    @Transactional
     public void deleteCustomer(Integer customerId) {
-        UserAccount customer = userAccountRepository.findById(customerId)
+        KhachHang k = khachHangRepository.findById(customerId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
-
-        if (customer.getRole() != UserRole.KHACH_HANG) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Người dùng không phải khách hàng");
-        }
-
-        userAccountRepository.delete(customer);
+        userAccountRepository.findByKhachHang_Id(k.getId()).ifPresent(userAccountRepository::delete);
+        khachHangRepository.delete(k);
     }
 
     public void deleteStaff(Integer staffId) {
@@ -258,7 +284,7 @@ public class AdminAccountService {
         return Math.min(size, MAX_PAGE_SIZE);
     }
 
-    private <T> PageResponse<T> toPageResponse(Page<UserAccount> page, java.util.function.Function<UserAccount, T> mapper) {
+    private <T, E> PageResponse<T> toPageResponse(Page<E> page, java.util.function.Function<E, T> mapper) {
         return new PageResponse<>(
             page.getContent().stream().map(mapper).toList(),
             page.getNumber(),
@@ -268,13 +294,18 @@ public class AdminAccountService {
         );
     }
 
-    private CustomerSummaryResponse toCustomerSummary(UserAccount u) {
+    private <T> PageResponse<T> toPageResponseUser(Page<UserAccount> page, java.util.function.Function<UserAccount, T> mapper) {
+        return toPageResponse(page, mapper);
+    }
+
+    private CustomerSummaryResponse toCustomerSummary(KhachHang k, Optional<UserAccount> acc) {
+        String status = acc.isPresent() ? acc.get().getStatus().name() : k.getStatus().name();
         return new CustomerSummaryResponse(
-            u.getId(),
-            u.getEmail(),
-            u.getFullName(),
-            u.getPhone(),
-            u.getStatus().name()
+            k.getId(),
+            k.getEmail(),
+            k.getFullName(),
+            k.getPhone(),
+            status
         );
     }
 
@@ -296,14 +327,18 @@ public class AdminAccountService {
         }
     }
 
-    private CustomerProfileResponse toCustomerProfile(UserAccount u) {
+    private CustomerProfileResponse toCustomerProfile(KhachHang k, UserAccount u) {
+        String role = u != null ? u.getRole().name() : "VANG_LAI";
+        String st = u != null ? u.getStatus().name() : k.getStatus().name();
+        String avatar = u != null ? u.getAvatarUrl() : null;
         return new CustomerProfileResponse(
-            u.getId(),
-            u.getEmail(),
-            u.getFullName(),
-            u.getPhone(),
-            u.getRole().name(),
-            u.getStatus().name()
+            k.getId(),
+            k.getEmail(),
+            k.getFullName(),
+            k.getPhone(),
+            role,
+            st,
+            avatar
         );
     }
 

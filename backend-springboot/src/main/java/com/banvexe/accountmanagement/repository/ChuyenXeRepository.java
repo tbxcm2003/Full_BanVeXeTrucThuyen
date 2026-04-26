@@ -54,4 +54,6 @@ public interface ChuyenXeRepository extends JpaRepository<ChuyenXe, Integer> {
 
     /** Tuyến là quan hệ {@code tuyenXe}; dùng {@code _Id} theo cột FK tuyen_xe_id (không phải trường scalar {@code tuyenXeId}). */
     boolean existsByTuyenXe_Id(Integer tuyenXeId);
+
+    long countByTuyenXe_Id(Integer tuyenXeId);
 }

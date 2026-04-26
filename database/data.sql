@@ -1,14 +1,33 @@
 CREATE DATABASE IF NOT EXISTS QuanLyVeXe DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE QuanLyVeXe;
 
-CREATE TABLE tai_khoan (
+
+CREATE TABLE khach_hang (
     id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(100) UNIQUE NOT NULL,
     so_dien_thoai VARCHAR(15) UNIQUE,
-    mat_khau VARCHAR(255) NOT NULL,
     ho_ten VARCHAR(100) NOT NULL,
-    vai_tro ENUM('KHACH_HANG', 'NHAN_VIEN', 'QUAN_TRI') DEFAULT 'KHACH_HANG',
     trang_thai ENUM('ACTIVE', 'INACTIVE', 'DELETED') DEFAULT 'ACTIVE'
+);
+
+
+CREATE TABLE tai_khoan (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    khach_hang_id INT NULL UNIQUE,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    so_dien_thoai VARCHAR(15) UNIQUE,
+    mat_khau VARCHAR(255) NOT NULL,
+    ho_ten VARCHAR(100) NULL,
+    vai_tro ENUM('KHACH_HANG', 'NHAN_VIEN', 'QUAN_TRI') DEFAULT 'KHACH_HANG',
+    trang_thai ENUM('ACTIVE', 'INACTIVE', 'DELETED') DEFAULT 'ACTIVE',
+    anh_dai_dien_url VARCHAR(512) NULL,
+    FOREIGN KEY (khach_hang_id) REFERENCES khach_hang(id)
+);
+
+CREATE TABLE cau_hinh_giao_dien (
+    id INT PRIMARY KEY,
+    logo_url VARCHAR(512) NULL,
+    banner_url VARCHAR(512) NULL
 );
 
 CREATE TABLE Xe (
@@ -51,7 +70,7 @@ CREATE TABLE VeXe (
     tong_tien DECIMAL(10,2) NOT NULL,
     trang_thai ENUM('CHO_THANH_TOAN', 'DA_THANH_TOAN', 'DANG_XU_LY', 'DA_HUY', 'HOAN_THANH') DEFAULT 'CHO_THANH_TOAN',
     ghi_chu TEXT,
-    FOREIGN KEY (khach_hang_id) REFERENCES tai_khoan(id),
+    FOREIGN KEY (khach_hang_id) REFERENCES khach_hang(id),
     FOREIGN KEY (chuyen_xe_id) REFERENCES ChuyenXe(id)
 );
 
@@ -74,17 +93,24 @@ CREATE TABLE ThanhToan (
     FOREIGN KEY (ve_xe_id) REFERENCES VeXe(id)
 );
 
-INSERT INTO tai_khoan (email, so_dien_thoai, mat_khau, ho_ten, vai_tro, trang_thai) VALUES
-('admin.baoxuyen@gmail.com', '0901234567', 'e10adc3949ba59abbe56e057f20f883e', 'Trần Bảo Xuyên', 'QUAN_TRI', 'ACTIVE'),
-('khachhang.a@gmail.com', '0923456789', 'e10adc3949ba59abbe56e057f20f883e', 'Nguyễn Văn A', 'KHACH_HANG', 'ACTIVE'),
-('khachhang.b@gmail.com', '0934567890', 'e10adc3949ba59abbe56e057f20f883e', 'Trần Thị B', 'KHACH_HANG', 'ACTIVE');
+INSERT INTO khach_hang (email, so_dien_thoai, ho_ten, trang_thai) VALUES
+('khachhang.a@gmail.com', '0923456789', 'Nguyễn Văn A', 'ACTIVE'),
+('khachhang.b@gmail.com', '0934567890', 'Trần Thị B', 'ACTIVE');
+
+
+INSERT INTO tai_khoan (khach_hang_id, email, so_dien_thoai, mat_khau, ho_ten, vai_tro, trang_thai) VALUES
+(NULL, 'admin.baoxuyen@gmail.com', '0901234567', 'e10adc3949ba59abbe56e057f20f883e', 'Trần Bảo Xuyên', 'QUAN_TRI', 'ACTIVE'),
+(NULL, 'nhanvien.baoxuyen@gmail.com', '0909876543', 'e10adc3949ba59abbe56e057f20f883e', 'Nhân viên Demo', 'NHAN_VIEN', 'ACTIVE'),
+(1, 'khachhang.a@gmail.com', NULL, 'e10adc3949ba59abbe56e057f20f883e', NULL, 'KHACH_HANG', 'ACTIVE'),
+(2, 'khachhang.b@gmail.com', NULL, 'e10adc3949ba59abbe56e057f20f883e', NULL, 'KHACH_HANG', 'ACTIVE');
+
+INSERT INTO cau_hinh_giao_dien (id, logo_url, banner_url) VALUES (1, NULL, NULL);
 
 INSERT INTO Xe (bien_so, loai_xe, so_ghe) VALUES
 ('51B-123.45', 'Giường nằm 34 chỗ', 34),
 ('51B-222.10', 'Limosine 11 chỗ', 11),
 ('51B-999.11', 'Ghế 28 chỗ', 28);
 
--- Tuyến 1-20 xuôi, 21-40 ngược; 41-42 Đà Lạt; 43-44 Sài Gòn <-> Cà Mau
 INSERT INTO TuyenXe (ten_tuyen, diem_di, diem_den, khoang_cach, thoi_gian_du_kien, gia_ve_co_ban, trang_thai) VALUES
 ('Huế - TP. Hồ Chí Minh', 'Thừa Thiên Huế', 'TP. Hồ Chí Minh', 1080.00, 1000, 320000.00, 'ACTIVE'),
 ('Đà Nẵng - TP. Hồ Chí Minh', 'Đà Nẵng', 'TP. Hồ Chí Minh', 850.00, 900, 300000.00, 'ACTIVE'),
@@ -266,9 +292,9 @@ INSERT INTO ChuyenXe (tuyen_xe_id, xe_id, ngay_di, gio_di, gia_ve, trang_thai) V
 (44, 3, '2026-12-21', '23:00:00', 220000.00, 'CHUA_KHOI_HANH');
 
 INSERT INTO VeXe (ma_ve, khach_hang_id, chuyen_xe_id, so_luong_ghe, tong_tien, trang_thai, ghi_chu) VALUES
-('VX20260410_001', 2, 1, 2, 640000.00, 'DA_THANH_TOAN', 'Vé mẫu: chuyến Huế - SG'),
-('VX20260410_002', 3, 2, 1, 300000.00, 'CHO_THANH_TOAN', NULL),
-('VX20260411_003', 2, 3, 1, 350000.00, 'DA_HUY', 'Khách hủy');
+('VX20260410_001', 1, 1, 2, 640000.00, 'DA_THANH_TOAN', 'Vé mẫu: chuyến Huế - SG'),
+('VX20260410_002', 2, 2, 1, 300000.00, 'CHO_THANH_TOAN', NULL),
+('VX20260411_003', 1, 3, 1, 350000.00, 'DA_HUY', 'Khách hủy');
 
 INSERT INTO ChiTietVe (ve_xe_id, so_ghe) VALUES
 (1, 'A01'), (1, 'A02'),

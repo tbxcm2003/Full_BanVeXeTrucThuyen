@@ -1,13 +1,13 @@
+# Secrets: backend-springboot/.env (từ .env.example). OS env ưu tiên hơn .env.
+
 spring:
   application:
     name: quan-ly-tai-khoan
   datasource:
-    # Trùng database/data.sql: CREATE DATABASE QuanLyVeXe — import toàn bộ file (schema + mẫu) trước khi chạy; ddl-auto: validate
-    # Nếu máy bạn dùng CSDL tên cũ (ví dụ quanlyveXe), hoặc đổi tên DB trong MariaDB, hoặc sửa lại tên ở đây cho khớp
-    url: jdbc:mariadb://localhost:3306/QuanLyVeXe?characterEncoding=utf8&useUnicode=true
+    url: ${SPRING_DATASOURCE_URL}
     driver-class-name: org.mariadb.jdbc.Driver
-    username: root
-    password: sapassword
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -20,11 +20,15 @@ spring:
         default_batch_fetch_size: 32
         jdbc:
           batch_size: 32
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
   mail:
-    host: smtp.gmail.com
-    port: 587
-    username: support.banvexe@gmail.com
-    password: iysfirkwxodmxpwi
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}
     properties:
       mail:
         smtp:
@@ -33,13 +37,17 @@ spring:
             enable: true
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+
+cloudinary:
+  cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+  api-key: ${CLOUDINARY_API_KEY:}
+  api-secret: ${CLOUDINARY_API_SECRET:}
 
 app:
   jwt:
-    secret: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-    expiration-minutes: 1440
+    secret: ${APP_JWT_SECRET}
+    expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:1440}
   otp:
-    expiration-minutes: 5
-  # Bật true khi dev: API 500 trả thêm nội dung lỗi thật (NPE, SQL, …). Tắt (false) trên môi trường production.
-  expose-internal-error-message: true
+    expiration-minutes: ${APP_OTP_EXPIRATION_MINUTES:5}
+  expose-internal-error-message: ${APP_EXPOSE_INTERNAL_ERROR_MESSAGE:true}

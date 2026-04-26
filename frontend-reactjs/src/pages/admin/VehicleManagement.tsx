@@ -182,8 +182,6 @@ const VehicleManagement: React.FC = () => {
           { label: 'Trung bình ghế / xe', value: vehStats.avg, icon: <BarChart2 size={22} />, color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-200' },
         ]}
       />
-      <p className="text-xs text-gray-500 -mt-2 mb-2">Bảng sắp xếp theo ID; tìm theo ID, biển số, loại xe, số ghế.</p>
-
       {loadErr && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <p className="font-semibold">Lỗi tải danh sách xe</p>
@@ -230,7 +228,7 @@ const VehicleManagement: React.FC = () => {
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                     {loadErr
                       ? 'Không tải được dữ liệu (xem thông báo lỗi phía trên).'
-                      : 'Chưa có xe nào. Thêm xe hoặc import dữ liệu mẫu vào CSDL.'}
+                      : 'Chưa có xe nào.'}
                   </td>
                 </tr>
               ) : displayVehicles.length === 0 ? (

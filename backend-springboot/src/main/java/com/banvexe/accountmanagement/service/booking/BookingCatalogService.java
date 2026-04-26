@@ -64,7 +64,8 @@ public class BookingCatalogService {
                 t.getKhoangCach(),
                 t.getThoiGianDuKien(),
                 t.getGiaVeCoBan(),
-                t.getTrangThai() != null ? t.getTrangThai().name() : "INACTIVE"
+                t.getTrangThai() != null ? t.getTrangThai().name() : "INACTIVE",
+                0L
             ))
             .toList();
     }

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MapPin, Plus, Pencil, Trash2, X, Save, RefreshCw, Layers, CheckCircle, Ban, Search } from 'lucide-react';
 import { api } from '../../api/client';
+import { getStoredRole } from '../../auth/storage';
 import AdminPageStats from '../../components/admin/AdminPageStats';
 import AdminListPagination, { ADMIN_PAGE_SIZE } from '../../components/admin/AdminListPagination';
 
@@ -13,6 +14,7 @@ type RouteRow = {
   thoiGianDuKienPhut?: number | null;
   giaVeCoBan: number | string;
   trangThai: string;
+  soChuyenXe?: number;
 };
 
 const emptyForm = {
@@ -34,6 +36,7 @@ const RouteManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [routeSearch, setRouteSearch] = useState('');
   const [tablePage, setTablePage] = useState(0);
+  const isStaff = getStoredRole() === 'NHAN_VIEN';
 
   const load = async () => {
     setLoading(true);
@@ -84,6 +87,7 @@ const RouteManagement: React.FC = () => {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isStaff) return;
     setSaving(true);
     try {
       const gia = Number(form.giaVeCoBan);
@@ -124,6 +128,7 @@ const RouteManagement: React.FC = () => {
   };
 
   const onDelete = async (r: RouteRow) => {
+    if (isStaff) return;
     if (!window.confirm(`Xóa / ngừng hoạt động tuyến «${r.tenTuyen}»?`)) return;
     try {
       await api.delete(`/api/manager/routes/${r.id}`);
@@ -158,6 +163,7 @@ const RouteManagement: React.FC = () => {
         r.khoangCach != null ? String(r.khoangCach) : '',
         r.thoiGianDuKienPhut != null ? String(r.thoiGianDuKienPhut) : '',
         String(r.giaVeCoBan),
+        r.soChuyenXe != null ? String(r.soChuyenXe) : '',
       ]
         .join(' ')
         .toLowerCase();
@@ -186,7 +192,7 @@ const RouteManagement: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2.5">
           <span className="w-1.5 h-6 bg-gradient-to-b from-[#ef5222] to-[#fd7e14] rounded-full inline-block" />
-          Quản lý tuyến xe
+          {isStaff ? 'Tuyến xe (chỉ xem)' : 'Quản lý tuyến xe'}
         </h2>
         <div className="flex gap-2">
           <button
@@ -197,13 +203,15 @@ const RouteManagement: React.FC = () => {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             Tải lại
           </button>
-          <button
-            type="button"
-            onClick={openAdd}
-            className="flex items-center gap-2 bg-[#ef5222] hover:bg-[#d94219] text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm"
-          >
-            <Plus size={18} /> Thêm tuyến
-          </button>
+          {!isStaff && (
+            <button
+              type="button"
+              onClick={openAdd}
+              className="flex items-center gap-2 bg-[#ef5222] hover:bg-[#d94219] text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm"
+            >
+              <Plus size={18} /> Thêm tuyến
+            </button>
+          )}
         </div>
       </div>
 
@@ -217,7 +225,6 @@ const RouteManagement: React.FC = () => {
         ]}
         gridClassName="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2"
       />
-      <p className="text-xs text-gray-500 -mt-2 mb-2">Bảng sắp xếp theo ID; ô tìm kiếm lọc theo ID, tên tuyến, điểm đi/đến, trạng thái…</p>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="flex flex-col gap-2 border-b border-gray-100 bg-gray-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -246,26 +253,27 @@ const RouteManagement: React.FC = () => {
                 <th className="px-3 py-3 font-semibold whitespace-nowrap">Khoảng cách (km)</th>
                 <th className="px-3 py-3 font-semibold whitespace-nowrap">TG dự kiến (phút)</th>
                 <th className="px-3 py-3 font-semibold whitespace-nowrap">Giá cơ bản (đ)</th>
+                <th className="px-3 py-3 font-semibold whitespace-nowrap text-center">Số chuyến</th>
                 <th className="px-3 py-3 font-semibold whitespace-nowrap">Trạng thái</th>
-                <th className="px-3 py-3 font-semibold w-28">Thao tác</th>
+                {!isStaff && <th className="px-3 py-3 font-semibold w-28">Thao tác</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={isStaff ? 10 : 11} className="px-4 py-8 text-center text-gray-500">
                     Đang tải…
                   </td>
                 </tr>
               ) : list.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
-                    Chưa có tuyến nào. Kiểm tra CSDL hoặc thêm tuyến mới.
+                  <td colSpan={isStaff ? 10 : 11} className="px-4 py-8 text-center text-gray-500">
+                    Chưa có tuyến nào.
                   </td>
                 </tr>
               ) : displayRoutes.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={isStaff ? 10 : 11} className="px-4 py-8 text-center text-gray-500">
                     Không có tuyến khớp &quot;{routeSearch}&quot;.
                   </td>
                 </tr>
@@ -279,6 +287,9 @@ const RouteManagement: React.FC = () => {
                     <td className="px-3 py-3 text-gray-800">{r.khoangCach != null ? String(r.khoangCach) : '—'}</td>
                     <td className="px-3 py-3 text-gray-800">{r.thoiGianDuKienPhut != null ? String(r.thoiGianDuKienPhut) : '—'}</td>
                     <td className="px-3 py-3 text-gray-800 whitespace-nowrap">{String(r.giaVeCoBan)}</td>
+                    <td className="px-3 py-3 text-center font-semibold text-gray-800 tabular-nums">
+                      {r.soChuyenXe != null ? r.soChuyenXe : '—'}
+                    </td>
                     <td className="px-3 py-3">
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
@@ -290,26 +301,28 @@ const RouteManagement: React.FC = () => {
                         {r.trangThai}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(r)}
-                          className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
-                          title="Sửa"
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void onDelete(r)}
-                          className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"
-                          title="Xóa / ngừng"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
+                    {!isStaff && (
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(r)}
+                            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                            title="Sửa"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void onDelete(r)}
+                            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"
+                            title="Xóa / ngừng"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -319,7 +332,7 @@ const RouteManagement: React.FC = () => {
         <AdminListPagination page={tablePage} total={displayRoutes.length} onPageChange={setTablePage} />
       </div>
 
-      {modal && (
+      {modal && !isStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">

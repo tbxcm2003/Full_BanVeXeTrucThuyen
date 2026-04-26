@@ -7,14 +7,17 @@ import com.banvexe.accountmanagement.dto.booking.TripSummaryDto;
 import com.banvexe.accountmanagement.entity.ChiTietVe;
 import com.banvexe.accountmanagement.entity.ChuyenXe;
 import com.banvexe.accountmanagement.entity.TicketStatus;
+import com.banvexe.accountmanagement.entity.KhachHang;
 import com.banvexe.accountmanagement.entity.VeXe;
 import com.banvexe.accountmanagement.repository.ChiTietVeRepository;
 import com.banvexe.accountmanagement.repository.ChuyenXeRepository;
-import com.banvexe.accountmanagement.repository.UserAccountRepository;
+import com.banvexe.accountmanagement.repository.KhachHangRepository;
 import com.banvexe.accountmanagement.repository.VeXeRepository;
+import com.banvexe.accountmanagement.util.TicketGhiChuUtil;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,20 +29,20 @@ public class StaffBookingService {
 
     private final VeXeRepository veXeRepository;
     private final ChiTietVeRepository chiTietVeRepository;
-    private final UserAccountRepository userAccountRepository;
+    private final KhachHangRepository khachHangRepository;
     private final ChuyenXeRepository chuyenXeRepository;
     private final BookingCatalogService bookingCatalogService;
 
     public StaffBookingService(
         VeXeRepository veXeRepository,
         ChiTietVeRepository chiTietVeRepository,
-        UserAccountRepository userAccountRepository,
+        KhachHangRepository khachHangRepository,
         ChuyenXeRepository chuyenXeRepository,
         BookingCatalogService bookingCatalogService
     ) {
         this.veXeRepository = veXeRepository;
         this.chiTietVeRepository = chiTietVeRepository;
-        this.userAccountRepository = userAccountRepository;
+        this.khachHangRepository = khachHangRepository;
         this.chuyenXeRepository = chuyenXeRepository;
         this.bookingCatalogService = bookingCatalogService;
     }
@@ -58,9 +61,9 @@ public class StaffBookingService {
             return toStaffDetail(veXeRepository.findByIdWithDetails(ve.getId()).orElse(ve));
         }
         if (StringUtils.hasText(soDienThoai)) {
-            var user = userAccountRepository.findByPhone(soDienThoai.trim())
+            KhachHang kh = khachHangRepository.findByPhone(soDienThoai.trim())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách với SĐT này"));
-            List<VeXe> list = veXeRepository.findByKhachHangIdOrderByNgayDatDesc(user.getId());
+            List<VeXe> list = veXeRepository.findByKhachHangIdOrderByNgayDatDesc(kh.getId());
             if (list.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Khách chưa có vé");
             }
@@ -110,7 +113,40 @@ public class StaffBookingService {
         } else {
             veXeRepository.save(ve);
         }
+        if (StringUtils.hasText(req.trangThai())) {
+            try {
+                ve.setTrangThai(TicketStatus.valueOf(req.trangThai().trim()));
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Trạng thái vé không hợp lệ");
+            }
+        }
+        if (ve.getTrangThai() == TicketStatus.DA_HUY) {
+            String noiDung = TicketGhiChuUtil.noiDungHuyTheoCapNhat(
+                req.ghiChu() != null ? req.ghiChu() : null,
+                "vé đã hủy theo cập nhật từ nhân viên"
+            );
+            ve.setGhiChu(TicketGhiChuUtil.ghiChuHuyThanhCong(noiDung));
+        }
+        veXeRepository.saveAndFlush(ve);
         return toStaffDetail(veXeRepository.findByIdWithDetails(ve.getId()).orElse(ve));
+    }
+
+    @Transactional(readOnly = true)
+    public List<StaffTicketDetailDto> listCancelRequests() {
+        return veXeRepository.findByTrangThaiForManagerListWithFetches(TicketStatus.DANG_XU_LY)
+            .stream()
+            .filter(v -> TicketGhiChuUtil.ghiChuCoYeuCauHuy(v.getGhiChu()))
+            .map(this::toStaffDetail)
+            .collect(Collectors.toList());
+    }
+
+    /** Số yêu cầu hủy đang chờ (nhẹ hơn gọi list + map DTO khi chưa có yêu cầu). */
+    @Transactional(readOnly = true)
+    public long countCancelRequests() {
+        return veXeRepository.findByTrangThaiForManagerListWithFetches(TicketStatus.DANG_XU_LY)
+            .stream()
+            .filter(v -> TicketGhiChuUtil.ghiChuCoYeuCauHuy(v.getGhiChu()))
+            .count();
     }
 
     @Transactional
@@ -120,8 +156,38 @@ public class StaffBookingService {
         if (ve.getTrangThai() != TicketStatus.DANG_XU_LY) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vé không ở trạng thái chờ duyệt hủy");
         }
-        ve.setTrangThai(TicketStatus.DA_HUY);
-        veXeRepository.save(ve);
+        if (!TicketGhiChuUtil.ghiChuCoYeuCauHuy(ve.getGhiChu())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vé này không phải yêu cầu hủy từ khách hàng");
+        }
+        String oneLine = TicketGhiChuUtil.ghiChuHuyThanhCong("yêu cầu hủy đã được duyệt");
+        int n = veXeRepository.updateGhiChuAndTrangThaiById(ticketId, oneLine, TicketStatus.DA_HUY);
+        if (n != 1) {
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Không cập nhật được ghi chú / trạng thái vé. Thử lại."
+            );
+        }
+    }
+
+    @Transactional
+    public void rejectCancelTicket(Integer ticketId, String lyDo) {
+        VeXe ve = veXeRepository.findById(ticketId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé"));
+        if (ve.getTrangThai() != TicketStatus.DANG_XU_LY) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vé không ở trạng thái chờ duyệt hủy");
+        }
+        if (!TicketGhiChuUtil.ghiChuCoYeuCauHuy(ve.getGhiChu())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vé này không phải yêu cầu hủy từ khách hàng");
+        }
+        String reason = (lyDo == null || lyDo.isBlank()) ? "Không nêu lý do" : lyDo.trim();
+        String line = TicketGhiChuUtil.ghiChuTuChoiHuy(reason);
+        int n = veXeRepository.updateGhiChuAndTrangThaiById(ticketId, line, TicketStatus.DA_THANH_TOAN);
+        if (n != 1) {
+            throw new ResponseStatusException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Không cập nhật được từ chối hủy. Thử lại."
+            );
+        }
     }
 
     @Transactional
@@ -133,7 +199,7 @@ public class StaffBookingService {
     }
 
     private StaffTicketDetailDto toStaffDetail(VeXe ve) {
-        var user = userAccountRepository.findById(ve.getKhachHangId()).orElse(null);
+        KhachHang kh = khachHangRepository.findById(ve.getKhachHangId()).orElse(null);
         ChuyenXe c = ve.getChuyenXe();
         if (c == null) {
             throw new ResponseStatusException(
@@ -177,9 +243,9 @@ public class StaffBookingService {
             ve.getNgayDat(),
             ve.getGhiChu(),
             ve.getKhachHangId(),
-            user != null ? user.getEmail() : null,
-            user != null ? user.getFullName() : null,
-            user != null ? user.getPhone() : null,
+            kh != null ? kh.getEmail() : null,
+            kh != null ? kh.getFullName() : null,
+            kh != null ? kh.getPhone() : null,
             seats,
             trip
         );

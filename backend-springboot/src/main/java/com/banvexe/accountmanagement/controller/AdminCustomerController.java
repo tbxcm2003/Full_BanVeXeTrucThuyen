@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/admin/customers")
-// @PreAuthorize("hasRole('QUAN_TRI')") // Tạm vô hiệu hóa xác thực để test frontend
 public class AdminCustomerController {
 
     private final AdminAccountService adminAccountService;
@@ -33,6 +32,7 @@ public class AdminCustomerController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('QUAN_TRI', 'NHAN_VIEN')")
     public ResponseEntity<ApiResponse<PageResponse<CustomerSummaryResponse>>> listCustomers(
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "10") int size,
@@ -44,6 +44,7 @@ public class AdminCustomerController {
     }
 
     @GetMapping("/{customerId}")
+    @PreAuthorize("hasAnyRole('QUAN_TRI', 'NHAN_VIEN')")
     public ResponseEntity<ApiResponse<AdminCustomerDetailResponse>> getCustomer(
         @PathVariable Integer customerId
     ) {
@@ -52,6 +53,7 @@ public class AdminCustomerController {
     }
 
     @PostMapping
+    @PreAuthorize("hasRole('QUAN_TRI')")
     public ResponseEntity<ApiResponse<CustomerSummaryResponse>> createCustomer(
         @Valid @RequestBody CreateCustomerRequest request
     ) {
@@ -60,6 +62,7 @@ public class AdminCustomerController {
     }
 
     @PutMapping("/{customerId}")
+    @PreAuthorize("hasRole('QUAN_TRI')")
     public ResponseEntity<ApiResponse<CustomerSummaryResponse>> updateCustomer(
         @PathVariable Integer customerId,
         @Valid @RequestBody UpdateCustomerRequest request
@@ -69,6 +72,7 @@ public class AdminCustomerController {
     }
 
     @PutMapping("/{customerId}/status")
+    @PreAuthorize("hasRole('QUAN_TRI')")
     public ResponseEntity<ApiResponse<Void>> updateCustomerStatus(
         @PathVariable Integer customerId,
         @Valid @RequestBody UpdateCustomerStatusRequest request
@@ -78,6 +82,7 @@ public class AdminCustomerController {
     }
 
     @DeleteMapping("/{customerId}")
+    @PreAuthorize("hasRole('QUAN_TRI')")
     public ResponseEntity<ApiResponse<Void>> deleteCustomer(
         @PathVariable Integer customerId
     ) {

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { LogIn, Lock, Mail, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
-import { setAuth } from '../../auth/storage';
+import { setAuth, setLastLoginEmailForHint, getLastLoginEmailForHint } from '../../auth/storage';
 import logoImage from '../../assets/logo.png';
 
 type Tab = 'login' | 'register' | 'forgot';
@@ -14,7 +14,7 @@ const LoginPage: React.FC = () => {
   const [registerStep, setRegisterStep] = useState<RegisterStep>('form');
   const [forgotStep, setForgotStep] = useState<ForgotStep>('email');
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => getLastLoginEmailForHint());
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -60,7 +60,7 @@ const LoginPage: React.FC = () => {
   };
 
   const clearAllFormFields = () => {
-    setEmail('');
+    setEmail(getLastLoginEmailForHint());
     setPassword('');
     setFullName('');
     setPhone('');
@@ -207,7 +207,8 @@ const LoginPage: React.FC = () => {
         return;
       }
       setAuth(token, mail || email, role, returnedName || mail || email, returnedPhone);
-      if (role === 'QUAN_TRI') {
+      setLastLoginEmailForHint(mail || email);
+      if (role === 'QUAN_TRI' || role === 'NHAN_VIEN') {
         navigate('/admin', { replace: true });
       } else {
         const safeFrom = from.startsWith('/admin') ? '/' : from;
@@ -324,15 +325,24 @@ const LoginPage: React.FC = () => {
               )}
 
               {tab === 'login' && (
-                <form onSubmit={onLoginSubmit} autoComplete="off" className="mt-6 space-y-4">
+                <form onSubmit={onLoginSubmit} autoComplete="on" className="mt-6 space-y-4" name="login">
                   {err && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</div>}
                   {success && <div className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">{success}</div>}
+                  {getLastLoginEmailForHint() && (
+                    <datalist id="login-email-hints">
+                      <option value={getLastLoginEmailForHint()} />
+                    </datalist>
+                  )}
                   <div className="relative">
                     <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#ef5222]" />
                     <input
                       type="email"
+                      name="email"
+                      id="login-email"
+                      inputMode="email"
                       required
-                      autoComplete="off"
+                      autoComplete="username"
+                      list={getLastLoginEmailForHint() ? 'login-email-hints' : undefined}
                       placeholder="Nhập email"
                       className="w-full pl-10 pr-3 py-3 border border-[#f4c9bd] rounded-lg text-sm focus:ring-2 focus:ring-[#ef5222]/20 focus:border-[#ef5222] outline-none"
                       value={email}
@@ -343,9 +353,11 @@ const LoginPage: React.FC = () => {
                     <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       type="password"
+                      name="password"
+                      id="login-password"
                       required
                       minLength={6}
-                      autoComplete="off"
+                      autoComplete="current-password"
                       placeholder="Nhập mật khẩu"
                       className="w-full pl-10 pr-3 py-3 border border-[#f4c9bd] rounded-lg text-sm focus:ring-2 focus:ring-[#ef5222]/20 focus:border-[#ef5222] outline-none"
                       value={password}

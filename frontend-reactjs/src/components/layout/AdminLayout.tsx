@@ -1,21 +1,35 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Users, LogOut, Menu, Bell, Bus, MapPin, BusFront, Ticket, Truck } from 'lucide-react';
-import { clearAuth, getStoredEmail } from '../../auth/storage';
+import { Users, LogOut, Menu, Bell, Bus, MapPin, BusFront, Ticket, Truck, UserCircle2, Ban } from 'lucide-react';
+import { clearAuth, getStoredEmail, getStoredRole } from '../../auth/storage';
 
 const AdminLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const adminEmail = getStoredEmail() || 'quản trị';
+  const role = getStoredRole();
+  const isManager = role === 'QUAN_TRI';
+  const isStaff = role === 'NHAN_VIEN';
 
-  const navItems = [
-    { name: 'Quản lý tài khoản', path: '/admin/accounts', icon: <Users size={20} /> },
-    { name: 'Tuyến xe', path: '/admin/routes', icon: <MapPin size={20} /> },
-    { name: 'Chuyến xe', path: '/admin/trips', icon: <BusFront size={20} /> },
-    { name: 'Vé', path: '/admin/tickets', icon: <Ticket size={20} /> },
-    { name: 'Quản lý xe', path: '/admin/vehicles', icon: <Truck size={20} /> },
-  ];
+  const navItems = useMemo(() => {
+    const items: { name: string; path: string; icon: React.ReactNode; managerOnly?: boolean }[] = [
+      { name: 'Quản lý tài khoản', path: '/admin/accounts', icon: <Users size={20} />, managerOnly: true },
+      { name: 'Quản lý khách hàng', path: '/admin/customers', icon: <UserCircle2 size={20} /> },
+      { name: 'Yêu cầu hủy vé', path: '/admin/cancel-requests', icon: <Ban size={20} /> },
+      { name: 'Tuyến xe', path: '/admin/routes', icon: <MapPin size={20} /> },
+      { name: 'Chuyến xe', path: '/admin/trips', icon: <BusFront size={20} /> },
+      { name: 'Vé', path: '/admin/tickets', icon: <Ticket size={20} /> },
+      { name: 'Quản lý xe', path: '/admin/vehicles', icon: <Truck size={20} />, managerOnly: true },
+    ];
+    if (isManager) {
+      return items;
+    }
+    if (isStaff) {
+      return items.filter((i) => !i.managerOnly);
+    }
+    return items;
+  }, [isManager, isStaff]);
 
   const isActivePath = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(`${path}/`);
@@ -53,7 +67,7 @@ const AdminLayout: React.FC = () => {
               {adminEmail.charAt(0).toUpperCase()}
             </div>
             <div className='hidden md:block text-sm max-w-[220px] truncate'>
-              <p className='font-semibold leading-none'>Quản trị</p>
+              <p className='font-semibold leading-none'>{isManager ? 'Quản trị' : isStaff ? 'Nhân viên' : 'VinaGo'}</p>
               <p className='text-xs text-white/80 lowercase mt-1 truncate' title={adminEmail}>
                 {adminEmail}
               </p>

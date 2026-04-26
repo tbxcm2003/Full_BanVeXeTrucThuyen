@@ -5,6 +5,7 @@ import java.util.List;
 
 public record StaffUpdateTicketRequest(
     @Size(max = 2000) String ghiChu,
-    List<@Size(min = 1, max = 10) String> maGheMoi
+    List<@Size(min = 1, max = 10) String> maGheMoi,
+    String trangThai
 ) {
 }

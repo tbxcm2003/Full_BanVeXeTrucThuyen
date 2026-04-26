@@ -6,6 +6,7 @@ public record CustomerProfileResponse(
     String fullName,
     String phone,
     String role,
-    String status
+    String status,
+    String avatarUrl
 ) {
 }

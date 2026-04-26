@@ -8,8 +8,12 @@ import com.banvexe.accountmanagement.dto.RegisterRequest;
 import com.banvexe.accountmanagement.dto.UserProfileResponse;
 import com.banvexe.accountmanagement.dto.VerifyEmailRequest;
 import com.banvexe.accountmanagement.entity.AccountStatus;
+import com.banvexe.accountmanagement.entity.KhachHang;
 import com.banvexe.accountmanagement.entity.UserAccount;
+import com.banvexe.accountmanagement.entity.UserAccount.UserRole;
+import com.banvexe.accountmanagement.repository.KhachHangRepository;
 import com.banvexe.accountmanagement.repository.UserAccountRepository;
+import com.banvexe.accountmanagement.util.AccountView;
 import com.banvexe.accountmanagement.util.PhoneNumberUtil;
 import com.banvexe.accountmanagement.security.JwtService;
 import java.security.SecureRandom;
@@ -31,6 +35,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class AuthService {
 
     private final UserAccountRepository userAccountRepository;
+    private final KhachHangRepository khachHangRepository;
     private final PasswordService passwordService;
     private final JwtService jwtService;
     private final JavaMailSender mailSender;
@@ -45,11 +50,14 @@ public class AuthService {
     @Value("${app.otp.expiration-minutes:5}")
     private long otpExpirationMinutes;
 
-    public AuthService(UserAccountRepository userAccountRepository,
-                       PasswordService passwordService,
-                       JwtService jwtService,
-                       JavaMailSender mailSender) {
+    public AuthService(
+        UserAccountRepository userAccountRepository,
+        KhachHangRepository khachHangRepository,
+        PasswordService passwordService,
+        JwtService jwtService,
+        JavaMailSender mailSender) {
         this.userAccountRepository = userAccountRepository;
+        this.khachHangRepository = khachHangRepository;
         this.passwordService = passwordService;
         this.jwtService = jwtService;
         this.mailSender = mailSender;
@@ -69,18 +77,64 @@ public class AuthService {
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-        if (phone != null && userAccountRepository.existsByPhone(phone)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại này đã được dùng cho một tài khoản. Vui lòng dùng số khác.");
+
+        return khachHangRepository.findByEmail(email)
+            .map(kh -> registerLinkExistingKhach(email, request, phone, kh))
+            .orElseGet(() -> registerNewKhachAndAccount(email, request, phone));
+    }
+
+    private MessageResponse registerNewKhachAndAccount(String email, RegisterRequest request, String phone) {
+        if (phone != null && khachHangRepository.existsByPhone(phone)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại này đã được dùng. Vui lòng dùng số khác.");
         }
+        KhachHang kh = new KhachHang();
+        kh.setEmail(email);
+        kh.setPhone(phone);
+        kh.setFullName(request.fullName().trim());
+        kh.setStatus(AccountStatus.INACTIVE);
+        try {
+            kh = khachHangRepository.save(kh);
+        } catch (DataIntegrityViolationException e) {
+            throw new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "Email hoặc số điện thoại trùng với dữ liệu đã có."
+            );
+        }
+        return saveUserAndSendOtp(email, request.password().trim(), kh);
+    }
 
+    private MessageResponse registerLinkExistingKhach(
+        String email, RegisterRequest request, String phone, KhachHang kh) {
+        if (userAccountRepository.findByKhachHang_Id(kh.getId()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email này đã được dùng cho một tài khoản. Vui lòng dùng email khác.");
+        }
+        if (kh.getPhone() != null && !kh.getPhone().isBlank()) {
+            if (phone == null || !phone.equals(kh.getPhone())) {
+                throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Số điện thoại không trùng với hồ sơ đã tạo khi mua vé (vãng lai). Vui lòng dùng cùng số hoặc liên hệ hỗ trợ."
+                );
+            }
+        } else if (phone != null) {
+            if (khachHangRepository.existsByPhone(phone)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số điện thoại này đã được dùng.");
+            }
+            kh.setPhone(phone);
+        }
+        if (request.fullName() != null && !request.fullName().isBlank() && (kh.getFullName() == null || kh.getFullName().isBlank())) {
+            kh.setFullName(request.fullName().trim());
+        }
+        khachHangRepository.save(kh);
+        return saveUserAndSendOtp(email, request.password().trim(), kh);
+    }
+
+    private MessageResponse saveUserAndSendOtp(String email, String password, KhachHang kh) {
         UserAccount user = new UserAccount();
+        user.setKhachHang(kh);
         user.setEmail(email);
-        user.setPasswordHash(passwordService.encode(request.password()));
-        user.setFullName(request.fullName().trim());
-        user.setPhone(phone);
-        user.setRole(UserAccount.UserRole.KHACH_HANG);
+        user.setPasswordHash(passwordService.encode(password));
+        user.setRole(UserRole.KHACH_HANG);
         user.setStatus(AccountStatus.INACTIVE);
-
         try {
             userAccountRepository.save(user);
         } catch (DataIntegrityViolationException e) {
@@ -90,7 +144,6 @@ public class AuthService {
             );
         }
         sendOtp(otpStore, email, "Xác thực email đăng ký tài khoản");
-
         return new MessageResponse("Đăng ký thành công. Vui lòng kiểm tra email để lấy OTP xác thực.");
     }
 
@@ -107,6 +160,7 @@ public class AuthService {
         return new MessageResponse("Đã gửi lại OTP qua email.");
     }
 
+    @Transactional
     public MessageResponse verifyEmail(VerifyEmailRequest request) {
         String email = normalizeEmail(request.email());
         OtpData otpData = otpStore.get(email);
@@ -128,6 +182,10 @@ public class AuthService {
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
 
         user.setStatus(AccountStatus.ACTIVE);
+        if (user.getKhachHang() != null) {
+            user.getKhachHang().setStatus(AccountStatus.ACTIVE);
+            khachHangRepository.save(user.getKhachHang());
+        }
         userAccountRepository.save(user);
         otpStore.remove(email);
 
@@ -136,10 +194,9 @@ public class AuthService {
 
     public MessageResponse requestPasswordResetOtp(EmailRequest request) {
         String email = normalizeEmail(request.email());
-        UserAccount user = userAccountRepository.findByEmail(email).orElse(null);
-        if (user != null) {
-            sendOtp(passwordResetOtpStore, email, "Mã OTP đặt lại mật khẩu");
-        }
+        userAccountRepository.findByEmail(email).ifPresent(user -> 
+            sendOtp(passwordResetOtpStore, email, "Mã OTP đặt lại mật khẩu")
+        );
         verifiedResetEmails.remove(email);
         return new MessageResponse("Đã gửi mã xác thực qua email.");
     }
@@ -194,6 +251,10 @@ public class AuthService {
         if (user.getStatus() != AccountStatus.ACTIVE) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản chưa xác thực email hoặc đang bị khóa");
         }
+        if (user.getRole() == UserRole.KHACH_HANG && user.getKhachHang() != null
+            && user.getKhachHang().getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Hồ sơ khách hàng chưa kích hoạt hoặc đang bị khóa");
+        }
 
         String token = jwtService.generateToken(user);
         return new AuthResponse(
@@ -201,22 +262,25 @@ public class AuthService {
             "Bearer",
             user.getEmail(),
             user.getRole().name(),
-            user.getFullName(),
-            user.getPhone()
+            AccountView.fullName(user),
+            AccountView.phone(user)
         );
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public UserProfileResponse me(String email) {
         UserAccount user = userAccountRepository.findByEmail(normalizeEmail(email))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
 
+        String avatar = user.getAvatarUrl();
         return new UserProfileResponse(
-            user.getId(),
+            AccountView.publicId(user),
             user.getEmail(),
-            user.getFullName(),
-            user.getPhone(),
+            AccountView.fullName(user),
+            AccountView.phone(user),
             user.getRole().name(),
-            user.getStatus().name()
+            user.getStatus().name(),
+            avatar
         );
     }
 

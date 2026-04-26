@@ -1,104 +1,33 @@
 import { useEffect, useState } from 'react';
-import { Calendar, MapPin, Users } from 'lucide-react';
 import axios from 'axios';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import bannerImage from '../../assets/banner.png';
-import tphcmImage from '../../assets/TPHCM.png';
-import daLatImage from '../../assets/DaLat.png';
-import daNangImage from '../../assets/DaNang.png';
-import km1 from '../../assets/KM1.png';
-import km2 from '../../assets/KM2.png';
-import km3 from '../../assets/KM3.png';
-import km4 from '../../assets/KM4.png';
-import km5 from '../../assets/KM5.png';
-import km6 from '../../assets/KM6.png';
-
-type TripSummary = {
-  id: number;
-  tenTuyen: string;
-  diemDi: string;
-  diemDen: string;
-  ngayDi: string;
-  gioDi: string;
-  gioDenDuKien?: string;
-  thoiGianDuKienPhut?: number;
-  khoangCach?: number;
-  giaVe: number;
-  loaiXe: string;
-  soGheTrong: number;
-};
-
-type RouteSummary = {
-  tenTuyen: string;
-  diemDi: string;
-  diemDen: string;
-  thoiGianDuKien?: number;
-};
-
-type SeatStatus = {
-  maGhe: string;
-  daBan: boolean;
-};
-
-type SeatMapResponse = {
-  tongSoGhe: number;
-  ghe: SeatStatus[];
-};
-
-type UiSeat = {
-  maGhe: string;
-  daBan: boolean;
-  hienThiGhe?: string;
-};
-
-type SeatLayout = {
-  tangDuoi?: UiSeat[][];
-  tangTren?: UiSeat[][];
-  single?: UiSeat[][];
-  singleType?: 'limousine' | 'seat';
-};
-
-type SearchCriteria = {
-  diemDi: string;
-  diemDen: string;
-  ngayDi: string;
-  ngayVe: string;
-  soVe: string;
-  tripType: 'one-way' | 'round-trip';
-};
-
-type SelectedTripInfo = {
-  id: number;
-  tenTuyen: string;
-  diemDi: string;
-  diemDen: string;
-  ngayDi: string;
-  gioDi: string;
-  gioDenDuKien?: string;
-  thoiGianDuKienPhut?: number;
-  khoangCach?: number;
-};
-
-type TimeFilterKey = 'early' | 'morning' | 'afternoon' | 'evening';
-type VehicleFilterKey = 'ghe' | 'giuong' | 'limousine';
-type ResultTab = 'outbound' | 'return';
-type HomeRestoreState = {
-  search: SearchCriteria;
-  outboundTrips: TripSummary[];
-  returnTrips: TripSummary[];
-  activeResultTab: ResultTab;
-  chuyenDiDaChon: TripSummary | null;
-  chuyenVeDaChon: TripSummary | null;
-  chuyenChonDauTien: TripSummary | null;
-  gheDangChonTheoChuyen: Record<number, string[]>;
-  tripIdsDaMoChonGhe: number[];
-  tripDangNoiBatId: number | null;
-  focusTripId?: number | null;
-};
+import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
+import type { PublicBranding } from '../../types/publicBranding';
+import {
+  getVehicleKind,
+  gheHienThiTrenBang,
+  tripHasAvailableSeatMatchingFilters,
+  type SeatMapResponse,
+  type SeatStatus,
+} from '../../utils/seatMapLayout';
+import { HomePromoSection, HomeRouteCardsSection } from './home/HomeMarketingSections';
+import HomeSearchHero from './home/HomeSearchHero';
+import HomeTripCard from './home/HomeTripCard';
+import { addMinutesToTime, formatDuration, formatWeekdayDate } from './home/homeFormatters';
+import type {
+  HomeRestoreState,
+  ResultTab,
+  RouteSummary,
+  SearchCriteria,
+  SelectedTripInfo,
+  TimeFilterKey,
+  TripSummary,
+  VehicleFilterKey,
+} from './home/homeTypes';
 
 const HomePage = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const branding = useOutletContext<PublicBranding | undefined>();
   const [tripType, setTripType] = useState<'one-way' | 'round-trip'>('one-way');
   const [diemDi, setDiemDi] = useState('');
   const [diemDen, setDiemDen] = useState('');
@@ -146,57 +75,6 @@ const HomePage = () => {
   const [gheDangChonTheoChuyen, setGheDangChonTheoChuyen] = useState<Record<number, string[]>>({});
   const [routeDurationCache, setRouteDurationCache] = useState<Record<string, number>>({});
 
-  const promoSlides = [
-    [
-      { title: 'Ưu đãi tuyến Đà Lạt', image: km1 },
-      { title: 'Đặt vé online - giảm ngay', image: km2 },
-      { title: 'Giảm thời gian trung chuyển', image: km3 },
-    ],
-    [
-      { title: 'Mua vé sớm - giá tốt', image: km4 },
-      { title: 'Ưu đãi cuối tuần', image: km5 },
-      { title: 'Giảm thêm khi thanh toán online', image: km6 },
-    ],
-  ];
-
-  const [activePromo, setActivePromo] = useState(0);
-  const routeCards = [
-    {
-      title: 'Tuyến xe từ Tp Hồ Chí Minh',
-      image: tphcmImage,
-      imageAlt: 'Tp Hồ Chí Minh',
-      destinations: [
-        { name: 'Đà Lạt', distance: '310km - 480 giờ', price: '290.000đ' },
-        { name: 'Cần Thơ', distance: '170km - 310 giờ', price: '165.000đ' },
-      ],
-    },
-    {
-      title: 'Tuyến xe từ Đà Lạt',
-      image: daLatImage,
-      imageAlt: 'Đà Lạt',
-      destinations: [
-        { name: 'Tp Hồ Chí Minh', distance: '310km - 480 giờ', price: '290.000đ' },
-        { name: 'Đà Nẵng', distance: '700km - 840 giờ', price: '430.000đ' },
-      ],
-    },
-    {
-      title: 'Tuyến xe từ Đà Nẵng',
-      image: daNangImage,
-      imageAlt: 'Đà Nẵng',
-      destinations: [
-        { name: 'Nha Trang', distance: '100km - 120 giờ', price: '180.000đ' },
-        { name: 'Hà Nội', distance: '800km - 900 giờ', price: '500.000đ' },
-      ],
-    },
-  ];
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setActivePromo((current) => (current + 1) % promoSlides.length);
-    }, 3500);
-    return () => window.clearInterval(timer);
-  }, [promoSlides.length]);
-
   useEffect(() => {
     if (!diemDi.trim()) {
       setGoiYDiemDi([]);
@@ -232,51 +110,6 @@ const HomePage = () => {
     }, 250);
     return () => window.clearTimeout(timeoutId);
   }, [diemDen]);
-
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(value);
-
-  const formatDateVn = (value?: string) => {
-    if (!value) return '';
-    const [y, m, d] = value.split('-');
-    if (!y || !m || !d) return value;
-    return `${d}/${m}/${y}`;
-  };
-
-  const formatWeekdayDate = (value?: string) => {
-    if (!value) return '';
-    const date = new Date(`${value}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return formatDateVn(value);
-    return new Intl.DateTimeFormat('vi-VN', {
-      weekday: 'long',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    }).format(date);
-  };
-
-  const formatDuration = (minutes?: number) => {
-    if (!minutes || minutes <= 0) return '--:-- h';
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} h`;
-  };
-
-  const toMinuteOfDay = (time?: string) => {
-    if (!time) return null;
-    const [h, m] = time.split(':').map(Number);
-    if (Number.isNaN(h) || Number.isNaN(m)) return null;
-    return h * 60 + m;
-  };
-
-  const addMinutesToTime = (time?: string, minutes?: number) => {
-    const base = toMinuteOfDay(time);
-    if (base == null || !minutes || minutes < 0) return '';
-    const total = (base + minutes) % (24 * 60);
-    const h = Math.floor(total / 60);
-    const m = total % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
-  };
 
   const getRouteDurationFallback = async (trip: TripSummary): Promise<number | undefined> => {
     const key = `${trip.diemDi}|${trip.diemDen}|${trip.tenTuyen}`;
@@ -381,7 +214,9 @@ const HomePage = () => {
       setTripDangChonGhe(null);
       return;
     }
-    setGheDangChonTheoChuyen({});
+    if (tripType === 'one-way') {
+      setGheDangChonTheoChuyen({});
+    }
     setTripDangChonGhe(tripId);
     setTripDangNoiBatId(tripId);
     setTripIdsDaMoChonGhe((prev) => (prev.includes(tripId) ? prev : [...prev, tripId]));
@@ -392,7 +227,11 @@ const HomePage = () => {
       } else {
         setChuyenVeDaChon(trip);
       }
-      if (!chuyenChonDauTien) setChuyenChonDauTien(trip);
+      if (tripType === 'one-way') {
+        setChuyenChonDauTien(trip);
+      } else if (!chuyenChonDauTien) {
+        setChuyenChonDauTien(trip);
+      }
       const durationFromRoute = trip.thoiGianDuKienPhut ?? (await getRouteDurationFallback(trip));
       const gioDenTinhToan = trip.gioDenDuKien || addMinutesToTime(trip.gioDi, durationFromRoute);
       setSelectedTripInfo({
@@ -434,7 +273,11 @@ const HomePage = () => {
     if (trip) {
       if (activeResultTab === 'outbound') setChuyenDiDaChon(trip);
       if (activeResultTab === 'return') setChuyenVeDaChon(trip);
-      if (!chuyenChonDauTien) setChuyenChonDauTien(trip);
+      if (tripType === 'one-way') {
+        setChuyenChonDauTien(trip);
+      } else if (!chuyenChonDauTien) {
+        setChuyenChonDauTien(trip);
+      }
     }
     setGheDangChonTheoChuyen((prev) => {
       const current = prev[tripId] ?? [];
@@ -651,100 +494,6 @@ const HomePage = () => {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-  const pickSeat = (apiSeats: SeatStatus[], idx: number): UiSeat => {
-    const s = apiSeats[idx];
-    if (!s) return { maGhe: '', daBan: true };
-    return { maGhe: s.maGhe, daBan: s.daBan };
-  };
-
-  const withHienThi = (ui: UiSeat, hienThiGhe: string): UiSeat => ({ ...ui, hienThiGhe });
-
-  const buildSleeperLayout = (apiSeats: SeatStatus[]): SeatLayout => {
-    const total = apiSeats.length;
-    const lowerCount = Math.ceil(total / 2);
-    const upperCount = total - lowerCount;
-    const buildRows = (count: number, startIdx: number, prefix: 'A' | 'B') => {
-      const rows: UiSeat[][] = [];
-      if (count > 0) {
-        rows.push(
-          Array.from({ length: Math.min(2, count) }, (_, i) =>
-            withHienThi(pickSeat(apiSeats, startIdx + i), `${prefix}${String(i + 1).padStart(2, '0')}`),
-          ),
-        );
-      }
-      let used = rows[0]?.length ?? 0;
-      while (used < count) {
-        const rowSize = Math.min(3, count - used);
-        rows.push(
-          Array.from({ length: rowSize }, (_, i) =>
-            withHienThi(pickSeat(apiSeats, startIdx + used + i), `${prefix}${String(used + i + 1).padStart(2, '0')}`),
-          ),
-        );
-        used += rowSize;
-      }
-      return rows;
-    };
-    return { tangDuoi: buildRows(lowerCount, 0, 'A'), tangTren: buildRows(upperCount, lowerCount, 'B') };
-  };
-
-  const buildLimousineLayout = (apiSeats: SeatStatus[]): SeatLayout => {
-    const total = apiSeats.length;
-    const toSeat = (idx: number) => withHienThi(pickSeat(apiSeats, idx), String(idx + 1).padStart(2, '0'));
-    const rows: UiSeat[][] = [];
-    if (total >= 3 && total % 2 === 1) {
-      const pairUntil = total - 3;
-      for (let idx = 0; idx < pairUntil; idx += 2) rows.push([toSeat(idx), toSeat(idx + 1)]);
-      rows.push([toSeat(total - 3), toSeat(total - 2), toSeat(total - 1)]);
-    } else {
-      for (let idx = 0; idx < total; idx += 2) {
-        const row: UiSeat[] = [toSeat(idx)];
-        if (idx + 1 < total) row.push(toSeat(idx + 1));
-        rows.push(row);
-      }
-    }
-    return { single: rows, singleType: 'limousine' };
-  };
-
-  const buildSeatBusLayout = (apiSeats: SeatStatus[]): SeatLayout => {
-    const total = apiSeats.length;
-    const rows: UiSeat[][] = [];
-    const rowCount = Math.ceil(total / 4);
-    for (let row = 0; row < rowCount; row++) {
-      const base = row * 4;
-      const order = [3, 2, 1, 0];
-      const rowSeats = order
-        .map((offset) => {
-          const idx = base + offset;
-          if (idx >= total) return null;
-          return withHienThi(pickSeat(apiSeats, idx), String(idx + 1).padStart(2, '0'));
-        })
-        .filter((s): s is UiSeat => Boolean(s));
-      rows.push(rowSeats);
-    }
-    return { single: rows, singleType: 'seat' };
-  };
-
-  const getSeatLayoutByVehicleType = (vehicleType: string, apiSeats: SeatStatus[]): SeatLayout => {
-    const vt = norm(vehicleType || '');
-    if (vt.includes('giuong')) return buildSleeperLayout(apiSeats);
-    if (vt.includes('limousine') || vt.includes('limosine')) return buildLimousineLayout(apiSeats);
-    return buildSeatBusLayout(apiSeats);
-  };
-
-  const gheHienThiTrenBang = (maGheList: string[], soDo: SeatMapResponse | null, loaiXe: string) => {
-    if (!maGheList.length) return '';
-    if (!soDo) return maGheList.join(', ');
-    const layout = getSeatLayoutByVehicleType(loaiXe, soDo.ghe);
-    const m = new Map<string, string>();
-    const visit = (rows?: UiSeat[][]) => {
-      rows?.forEach((row) => row.forEach((s) => s.maGhe && m.set(s.maGhe, s.hienThiGhe ?? s.maGhe)));
-    };
-    visit(layout.tangDuoi);
-    visit(layout.tangTren);
-    visit(layout.single);
-    return maGheList.map((c) => m.get(c) ?? c).join(', ');
-  };
-
   const toggleTimeFilter = (key: TimeFilterKey) => {
     setTimeFilters((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -783,152 +532,74 @@ const HomePage = () => {
     });
   };
 
-  const matchesDeckFilter = (trip: TripSummary) => {
-    if (!deckFilters.top && !deckFilters.bottom) return true;
-    const kind = norm(trip.loaiXe || '');
-    return kind.includes('giuong');
-  };
-
   const applyAllFilters = (trips: TripSummary[]) =>
-    trips.filter((trip) => matchesTimeFilter(trip) && matchesVehicleFilter(trip) && matchesDeckFilter(trip));
+    trips.filter((trip) => matchesTimeFilter(trip) && matchesVehicleFilter(trip));
 
-  const filteredOutboundTrips = applyAllFilters(danhSachChuyen);
-  const filteredReturnTrips = applyAllFilters(danhSachChuyenVe);
-  const filteredTrips = activeResultTab === 'outbound' ? filteredOutboundTrips : filteredReturnTrips;
+  const baseFilteredOutbound = applyAllFilters(danhSachChuyen);
+  const baseFilteredReturn = applyAllFilters(danhSachChuyenVe);
+  const baseListForTab = activeResultTab === 'outbound' ? baseFilteredOutbound : baseFilteredReturn;
+  const hasSeatZoneFilter =
+    seatRowFilters.front || seatRowFilters.middle || seatRowFilters.back || deckFilters.top || deckFilters.bottom;
+  const filteredTrips = hasSeatZoneFilter
+    ? baseListForTab.filter((t) => tripHasAvailableSeatMatchingFilters(t.loaiXe, soDoGheTheoChuyen[t.id], seatRowFilters, deckFilters))
+    : baseListForTab;
+  const coChuyenGiuongTrongKetQua = baseListForTab.some((t) => getVehicleKind(t.loaiXe || '') === 'sleeper');
+
+  useEffect(() => {
+    if (!hasSeatZoneFilter) return;
+    const list = activeResultTab === 'outbound' ? danhSachChuyen : danhSachChuyenVe;
+    const base = list.filter((t) => matchesTimeFilter(t) && matchesVehicleFilter(t));
+    const missing = base.filter((t) => !soDoGheTheoChuyen[t.id]);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        missing.map((t) =>
+          axios
+            .get<{ data?: SeatMapResponse }>(`/api/catalog/trips/${t.id}/seats`)
+            .then((r) => ({ id: t.id, map: r.data?.data as SeatMapResponse | undefined }))
+            .catch(() => ({ id: t.id, map: undefined })),
+        ),
+      );
+      if (cancelled) return;
+      setSoDoGheTheoChuyen((prev) => {
+        const next = { ...prev };
+        for (const { id, map } of results) {
+          if (map) next[id] = map;
+        }
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSeatZoneFilter, activeResultTab, danhSachChuyen, danhSachChuyenVe, timeFilters, vehicleFilters, seatRowFilters, deckFilters, soDoGheTheoChuyen]);
 
   return (
     <div className="bg-white">
-      <div className="w-full py-4 flex justify-center">
-        <img src={bannerImage} alt="Banner" className="object-cover rounded-xl shadow-md w-full max-w-6xl max-h-[400px]" />
-      </div>
-
-      <div className="container mx-auto px-4 -mt-8 relative z-10">
-        <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-100 max-w-5xl mx-auto">
-          <div className="flex space-x-6 mb-4 border-b border-gray-200 pb-2">
-            <label className="flex items-center space-x-2 cursor-pointer text-[#ef5222] font-medium">
-              <input type="radio" name="tripType" checked={tripType === 'one-way'} onChange={() => setTripType('one-way')} className="form-radio text-[#ef5222]" />
-              <span>Một chiều</span>
-            </label>
-            <label className="flex items-center space-x-2 cursor-pointer text-gray-500">
-              <input type="radio" name="tripType" checked={tripType === 'round-trip'} onChange={() => setTripType('round-trip')} className="form-radio" />
-              <span>Khứ hồi</span>
-            </label>
-            <Link
-              to="/huong-dan-dat-ve"
-              className="ml-auto text-sm text-[#ef5222] hover:underline"
-            >
-              Hướng dẫn mua vé
-            </Link>
-          </div>
-
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-              <div className="lg:flex-[1.8]">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Điểm đi</label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  autoComplete="off"
-                  list={diemDi.trim() ? 'home-goi-y-diem-di' : undefined}
-                  placeholder="Thành phố Hồ Chí Minh"
-                  value={diemDi}
-                  onChange={(e) => setDiemDi(e.target.value)}
-                  className="w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:border-[#ef5222]"
-                />
-                <datalist id="home-goi-y-diem-di">
-                  {goiYDiemDi.map((item) => (
-                    <option key={item} value={item} />
-                  ))}
-                </datalist>
-              </div>
-              </div>
-              <div className="flex justify-center lg:flex-none lg:pb-1">
-                <label className="sr-only">Đảo điểm đi và điểm đến</label>
-                <button
-                  type="button"
-                  onClick={onSwapPlaces}
-                  className="flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-lg font-semibold text-gray-500 shadow-sm transition hover:border-[#ef5222]/40 hover:text-[#ef5222]"
-                  title="Đảo điểm đi và điểm đến"
-                >
-                  ⇌
-                </button>
-              </div>
-              <div className="lg:flex-[1.8]">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Điểm đến</label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    autoComplete="off"
-                    list={diemDen.trim() ? 'home-goi-y-diem-den' : undefined}
-                    placeholder="Đồng Tháp"
-                    value={diemDen}
-                    onChange={(e) => setDiemDen(e.target.value)}
-                    className="w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:border-[#ef5222]"
-                  />
-                  <datalist id="home-goi-y-diem-den">
-                    {goiYDiemDen.map((item) => (
-                      <option key={item} value={item} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-              <div className="lg:flex-[1.15]">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Ngày đi</label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                  <input
-                    type="date"
-                    lang="vi-VN"
-                    value={ngayDi}
-                    min={new Date().toISOString().split('T')[0]}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setNgayDi(value);
-                      if (ngayVe && value && ngayVe < value) setNgayVe(value);
-                    }}
-                    className="w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:border-[#ef5222]"
-                  />
-                </div>
-              </div>
-              {tripType === 'round-trip' && (
-                <div className="lg:flex-[1.15]">
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Ngày về</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                    <input
-                      type="date"
-                      lang="vi-VN"
-                      value={ngayVe}
-                      min={ngayDi || new Date().toISOString().split('T')[0]}
-                      onChange={(e) => setNgayVe(e.target.value)}
-                      className="w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:border-[#ef5222]"
-                    />
-                  </div>
-                </div>
-              )}
-              <div className="lg:flex-[0.9]">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Số vé</label>
-                <div className="relative">
-                  <Users className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
-                  <select value={soVe} onChange={(e) => setSoVe(e.target.value)} className="w-full pl-10 pr-3 py-3 border rounded-lg focus:outline-none focus:border-[#ef5222] appearance-none bg-white">
-                    <option>1</option>
-                    <option>2</option>
-                    <option>3</option>
-                    <option>4</option>
-                    <option>5</option>
-                  </select>
-                </div>
-              </div>
-          </div>
-
-          <div className="flex justify-center mt-6">
-            <button type="button" onClick={onSearchTrips} disabled={dangTimChuyen} className="bg-[#ef5222] hover:bg-[#d84a1e] text-white px-12 py-3 rounded-full font-bold shadow-lg transition transform hover:scale-105 flex items-center disabled:opacity-70">
-              {dangTimChuyen ? 'Đang tìm...' : 'Tìm chuyến xe'}
-            </button>
-          </div>
-        </div>
-      </div>
+      <HomeSearchHero
+        bannerUrl={branding?.bannerUrl}
+        tripType={tripType}
+        onTripTypeChange={setTripType}
+        diemDi={diemDi}
+        onDiemDiChange={setDiemDi}
+        goiYDiemDi={goiYDiemDi}
+        onSwapPlaces={onSwapPlaces}
+        diemDen={diemDen}
+        onDiemDenChange={setDiemDen}
+        goiYDiemDen={goiYDiemDen}
+        ngayDi={ngayDi}
+        onNgayDiChange={(v) => {
+          setNgayDi(v);
+          if (ngayVe && v && ngayVe < v) setNgayVe(v);
+        }}
+        ngayVe={ngayVe}
+        onNgayVeChange={setNgayVe}
+        soVe={soVe}
+        onSoVeChange={setSoVe}
+        onSearchTrips={onSearchTrips}
+        dangTimChuyen={dangTimChuyen}
+      />
 
       {daTimKiem && (
         <div className="container mx-auto px-4 py-10 max-w-6xl">
@@ -951,7 +622,7 @@ const HomePage = () => {
                         tripIdsDaMoChonGhe.includes(chuyenDiDaChon!.id) &&
                         tripIdsDaMoChonGhe.includes(chuyenVeDaChon!.id);
                       const showBoth = hasBothDirectional && (hasSelectedSeatBoth || hasOpenedSeatBoth);
-                      const tripOne = showBoth ? chuyenDiDaChon : chuyenChonDauTien;
+                      const tripOne = showBoth ? chuyenDiDaChon : chuyenDiDaChon ?? chuyenChonDauTien;
                       const tripTwo = showBoth ? chuyenVeDaChon : null;
                       if (!tripOne && !selectedTripInfo) return null;
                       const renderTripBlock = (trip: TripSummary, order: 1 | 2, withTopBorder = false) => {
@@ -1091,13 +762,15 @@ const HomePage = () => {
                     </div>
                   </div>
 
-                  <div>
-                    <p className="text-sm font-semibold text-gray-700 mb-2">Tầng</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setDeckFilters((p) => ({ ...p, top: !p.top }))} className={`px-3 py-1.5 rounded-md border ${deckFilters.top ? 'border-[#ef5222] text-[#ef5222]' : 'border-gray-300 text-gray-700'}`}>Tầng trên</button>
-                      <button type="button" onClick={() => setDeckFilters((p) => ({ ...p, bottom: !p.bottom }))} className={`px-3 py-1.5 rounded-md border ${deckFilters.bottom ? 'border-[#ef5222] text-[#ef5222]' : 'border-gray-300 text-gray-700'}`}>Tầng dưới</button>
+                  {coChuyenGiuongTrongKetQua && (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700 mb-2">Tầng (xe giường)</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => setDeckFilters((p) => ({ ...p, top: !p.top }))} className={`px-3 py-1.5 rounded-md border ${deckFilters.top ? 'border-[#ef5222] text-[#ef5222]' : 'border-gray-300 text-gray-700'}`}>Tầng trên (B)</button>
+                        <button type="button" onClick={() => setDeckFilters((p) => ({ ...p, bottom: !p.bottom }))} className={`px-3 py-1.5 rounded-md border ${deckFilters.bottom ? 'border-[#ef5222] text-[#ef5222]' : 'border-gray-300 text-gray-700'}`}>Tầng dưới (A)</button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1143,227 +816,19 @@ const HomePage = () => {
                 {thongBaoTimKiem && <p className="text-sm text-gray-500 mt-4">{thongBaoTimKiem}</p>}
                 <div className="space-y-4 mt-4">
                   {filteredTrips.map((trip) => (
-                    <div id={`trip-card-${trip.id}`} key={trip.id} className="rounded-xl border border-[#ef5222]/40 p-3 hover:shadow-md transition bg-white">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-[72px]">
-                              <p className="text-3xl font-bold text-gray-900 leading-none">{trip.gioDi?.slice(0, 5) || '--:--'}</p>
-                              <p className="text-[20px] leading-none text-green-700 mt-0.5">•</p>
-                              <p className="text-lg font-bold text-gray-900 mt-0.5 leading-tight truncate">{trip.diemDi || '---'}</p>
-                            </div>
-
-                            <div className="flex-1 px-1 pt-0.5">
-                              <div className="border-t border-dotted border-gray-300 mt-2" />
-                              <p className="text-sm font-semibold text-gray-700 mt-1.5 text-center">
-                                {formatDuration(trip.thoiGianDuKienPhut)}
-                                {trip.khoangCach ? ` - ${trip.khoangCach}Km` : ''}
-                              </p>
-                              <p className="text-xs text-gray-500 text-center">(Asia/Ho Chi Minh)</p>
-                            </div>
-
-                            <div className="min-w-[72px] text-right">
-                              <p className="text-3xl font-bold text-gray-900 leading-none">
-                                {(trip.gioDenDuKien || addMinutesToTime(trip.gioDi, trip.thoiGianDuKienPhut))?.slice(0, 5) || '--:--'}
-                              </p>
-                              <p className="text-[20px] leading-none text-[#ef5222] mt-0.5">•</p>
-                              <p className="text-lg font-bold text-gray-900 mt-0.5 leading-tight truncate">{trip.diemDen || '---'}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="min-w-[145px] text-right pt-0.5">
-                          <p className="text-xs text-gray-500">
-                            {trip.loaiXe ? `${trip.loaiXe} • ` : ''}{trip.soGheTrong} chỗ trống
-                          </p>
-                          <p className="text-2xl font-bold text-[#ef5222] mt-1">{formatCurrency(Number(trip.giaVe || 0))}</p>
-                        </div>
-                      </div>
-                      <div className="mt-2.5 pt-2.5 border-t border-gray-100 flex items-center justify-between">
-                        <div className="text-sm flex items-center gap-6">
-                          <button type="button" onClick={() => toggleChonGhe(trip.id)} className={`pb-1 border-b-2 transition ${tripDangChonGhe === trip.id ? 'text-[#ef5222] border-[#ef5222] font-semibold' : 'text-gray-700 border-transparent hover:text-[#ef5222]'}`}>
-                            Chọn ghế
-                          </button>
-                          <span className="text-gray-700">Lịch trình</span>
-                          <span className="text-gray-700">Trung chuyển</span>
-                          <span className="text-gray-700">Chính sách</span>
-                        </div>
-                        <button type="button" onClick={() => onChooseTrip(trip)} className="px-4 py-2 rounded-full text-sm font-semibold bg-[#ef5222] text-white hover:bg-[#d84a1e] transition">
-                          {tripType === 'round-trip' ? (activeResultTab === 'outbound' ? 'Chọn chuyến đi' : 'Chọn chuyến về') : 'Chọn chuyến'}
-                        </button>
-                      </div>
-
-                      {tripDangChonGhe === trip.id && (
-                        <div className="mt-4 border-t border-gray-100 pt-4">
-                          {dangTaiSoDoGhe && !soDoGheTheoChuyen[trip.id] && <p className="text-sm text-gray-500">Đang tải sơ đồ ghế...</p>}
-                          {soDoGheTheoChuyen[trip.id] && (
-                            <>
-                              <div className="flex items-center justify-center gap-10 text-base text-gray-700 mb-5 font-medium">
-                                <span className="inline-flex items-center gap-1"><span className="w-5 h-5 rounded-md bg-gray-300 border border-gray-300" />Đã bán</span>
-                                <span className="inline-flex items-center gap-1"><span className="w-5 h-5 rounded-md bg-blue-50 border border-blue-300" />Còn trống</span>
-                                <span className="inline-flex items-center gap-1"><span className="w-5 h-5 rounded-md bg-[#fff3ef] border border-[#ef5222]" />Đang chọn</span>
-                              </div>
-                              {(() => {
-                                const layout = getSeatLayoutByVehicleType(trip.loaiXe || '', soDoGheTheoChuyen[trip.id].ghe);
-                                const renderSeatButton = (seat: SeatStatus & { hienThiGhe?: string }, sizeClass = 'w-11 h-11 md:w-12 md:h-12') => {
-                                  const selected = (gheDangChonTheoChuyen[trip.id] ?? []).includes(seat.maGhe);
-                                  const seatClass = seat.daBan
-                                    ? 'bg-gray-200 text-gray-400 border-gray-300 cursor-not-allowed'
-                                    : selected
-                                      ? 'bg-[#fff3ef] text-[#ef5222] border-[#ef5222] cursor-pointer shadow-[0_2px_6px_rgba(239,82,34,0.2)]'
-                                      : 'bg-blue-50 text-blue-500 border-blue-300 cursor-pointer hover:bg-blue-100';
-                                  return (
-                                    <button key={seat.maGhe} type="button" onClick={() => onSelectSeat(trip.id, seat)} disabled={seat.daBan} className={`${sizeClass} text-[13px] font-bold rounded-lg border-2 leading-none transition ${seatClass}`}>
-                                      {seat.hienThiGhe ?? seat.maGhe}
-                                    </button>
-                                  );
-                                };
-                                return (
-                                  <>
-                                    {layout.tangDuoi && layout.tangTren && (
-                                      <div className="mb-4 grid grid-cols-1 gap-6 md:grid-cols-2">
-                                        <div>
-                                          <p className="text-sm font-semibold text-gray-700 mb-2 text-center">Tầng dưới</p>
-                                          <div className="space-y-3 max-w-md mx-auto">
-                                            {layout.tangDuoi.map((row, rowIdx) => (
-                                              <div key={`duoi-${rowIdx}`} className="grid grid-cols-3 gap-3 w-fit mx-auto">
-                                                {row.length === 2 ? (
-                                                  <>
-                                                    {renderSeatButton(row[0] as SeatStatus)}
-                                                    <div className="w-11 h-11 md:w-12 md:h-12" />
-                                                    {renderSeatButton(row[1] as SeatStatus)}
-                                                  </>
-                                                ) : (
-                                                  row.map((seat) => renderSeatButton(seat as SeatStatus))
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                        <div>
-                                          <p className="text-sm font-semibold text-gray-700 mb-2 text-center">Tầng trên</p>
-                                          <div className="space-y-3 max-w-md mx-auto">
-                                            {layout.tangTren.map((row, rowIdx) => (
-                                              <div key={`tren-${rowIdx}`} className="grid grid-cols-3 gap-3 w-fit mx-auto">
-                                                {row.length === 2 ? (
-                                                  <>
-                                                    {renderSeatButton(row[0] as SeatStatus)}
-                                                    <div className="w-11 h-11 md:w-12 md:h-12" />
-                                                    {renderSeatButton(row[1] as SeatStatus)}
-                                                  </>
-                                                ) : (
-                                                  row.map((seat) => renderSeatButton(seat as SeatStatus))
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                    {layout.tangDuoi && !layout.tangTren && (
-                                      <div className="mb-4">
-                                        <p className="text-sm font-semibold text-gray-700 mb-2 text-center">Tầng dưới</p>
-                                        <div className="space-y-3 max-w-md mx-auto">
-                                          {layout.tangDuoi.map((row, rowIdx) => (
-                                            <div key={`duoi-only-${rowIdx}`} className="grid grid-cols-3 gap-3 w-fit mx-auto">
-                                              {row.length === 2 ? (
-                                                <>
-                                                  {renderSeatButton(row[0] as SeatStatus)}
-                                                  <div className="w-11 h-11 md:w-12 md:h-12" />
-                                                  {renderSeatButton(row[1] as SeatStatus)}
-                                                </>
-                                              ) : (
-                                                row.map((seat) => renderSeatButton(seat as SeatStatus))
-                                              )}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {layout.tangTren && !layout.tangDuoi && (
-                                      <div className="mb-4">
-                                        <p className="text-sm font-semibold text-gray-700 mb-2 text-center">Tầng trên</p>
-                                        <div className="space-y-3 max-w-md mx-auto">
-                                          {layout.tangTren.map((row, rowIdx) => (
-                                            <div key={`tren-only-${rowIdx}`} className="grid grid-cols-3 gap-3 w-fit mx-auto">
-                                              {row.length === 2 ? (
-                                                <>
-                                                  {renderSeatButton(row[0] as SeatStatus)}
-                                                  <div className="w-11 h-11 md:w-12 md:h-12" />
-                                                  {renderSeatButton(row[1] as SeatStatus)}
-                                                </>
-                                              ) : (
-                                                row.map((seat) => renderSeatButton(seat as SeatStatus))
-                                              )}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {layout.single && (
-                                      <div className="mb-4">
-                                        <p className="text-sm font-semibold text-gray-700 mb-2 text-center">Tầng dưới</p>
-                                        {layout.singleType === 'seat' ? (
-                                          <div className="space-y-3 max-w-md mx-auto">
-                                            {layout.single.map((row, rowIdx) => (
-                                              <div key={`single-seat-${rowIdx}`} className="flex items-center justify-center gap-10">
-                                                <div className="flex gap-3">{row.slice(0, 2).map((seat) => renderSeatButton(seat as SeatStatus))}</div>
-                                                <div className="flex gap-3">{row.slice(2).map((seat) => renderSeatButton(seat as SeatStatus))}</div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        ) : (
-                                          <div className="space-y-2 max-w-[220px] mx-auto">
-                                            {layout.single.map((row, rowIdx) => (
-                                              <div key={`single-limo-${rowIdx}`} className="grid grid-cols-3 gap-2 w-fit mx-auto">
-                                                {row.length === 3 ? (
-                                                  row.map((seat) => renderSeatButton(seat as SeatStatus, 'w-10 h-10'))
-                                                ) : (
-                                                  <>
-                                                    {renderSeatButton(row[0] as SeatStatus, 'w-10 h-10')}
-                                                    <div className="w-10 h-10" />
-                                                    {row[1] ? renderSeatButton(row[1] as SeatStatus, 'w-10 h-10') : <div className="w-10 h-10" />}
-                                                  </>
-                                                )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                              {(gheDangChonTheoChuyen[trip.id] ?? []).length > 0 && (
-                                <div className="mt-4 flex items-center justify-between flex-wrap gap-2 border-t border-gray-100 pt-3">
-                                  <div>
-                                    <p className="text-sm text-gray-700">
-                                      {(gheDangChonTheoChuyen[trip.id] ?? []).length} Vé
-                                    </p>
-                                    <p className="text-sm font-semibold text-gray-700">
-                                      {gheHienThiTrenBang(
-                                        gheDangChonTheoChuyen[trip.id] ?? [],
-                                        soDoGheTheoChuyen[trip.id] ?? null,
-                                        trip.loaiXe || '',
-                                      )}
-                                    </p>
-                                  </div>
-                                  <div className="flex items-end gap-0.75">
-                                    <div className="text-right">
-                                      <p className="text-sm text-gray-500">Tổng tiền</p>
-                                      <p className="text-lg font-bold text-[#ef5222]">{formatCurrency((gheDangChonTheoChuyen[trip.id] ?? []).length * Number(trip.giaVe || 0))}</p>
-                                    </div>
-                                    <button type="button" onClick={() => onChooseTrip(trip)} className="px-6 py-2 rounded-full text-sm font-semibold bg-[#ef5222] text-white hover:bg-[#d84a1e] transition">
-                                      {tripType === 'round-trip' ? (activeResultTab === 'outbound' ? 'Chọn chuyến đi' : 'Chọn chuyến về') : 'Chọn'}
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <HomeTripCard
+                      key={trip.id}
+                      trip={trip}
+                      tripDangChonGhe={tripDangChonGhe}
+                      dangTaiSoDoGhe={dangTaiSoDoGhe}
+                      soDoGheTheoChuyen={soDoGheTheoChuyen}
+                      gheDangChonTheoChuyen={gheDangChonTheoChuyen}
+                      onToggleSeatPanel={toggleChonGhe}
+                      onSelectSeat={onSelectSeat}
+                      onChooseTrip={onChooseTrip}
+                      tripType={tripType}
+                      activeResultTab={activeResultTab}
+                    />
                   ))}
                   {!filteredTrips.length && daTimKiem && !thongBaoTimKiem && (
                     <div className="rounded-xl border border-gray-200 p-6 text-center text-gray-500">
@@ -1377,65 +842,8 @@ const HomePage = () => {
         </div>
       )}
 
-      <div className="container mx-auto px-4 py-16">
-        <h2 className="text-2xl font-bold text-center text-[#00613d] mb-8 uppercase">KHUYẾN MÃI NỔI BẬT</h2>
-        <div className="mx-auto max-w-5xl">
-          <div className="overflow-hidden rounded-2xl">
-            <div className="flex w-[200%] transition-transform duration-700 ease-in-out" style={{ transform: `translateX(-${activePromo * 50}%)` }}>
-              {promoSlides.map((group) => (
-                <div key={group[0].title} className="w-1/2 shrink-0 px-2">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {group.map((slide) => (
-                      <div key={slide.title} className="rounded-xl overflow-hidden shadow-lg border border-gray-100">
-                        <div className="relative h-40 md:h-48 bg-white">
-                          <img src={slide.image} alt={slide.title} className="h-full w-full object-cover" />
-                          <div className="absolute inset-0 bg-black/15" />
-                          <div className="absolute left-0 right-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent px-4 py-3 text-white font-semibold text-sm md:text-base">{slide.title}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="mt-4 flex justify-center gap-2">
-            {promoSlides.map((slide, index) => (
-              <button key={slide[0].title} type="button" onClick={() => setActivePromo(index)} className={`h-3 rounded-full transition-all duration-300 ${index === activePromo ? 'w-10 bg-[#ef5222]' : 'w-3 bg-gray-300 hover:bg-gray-400'}`} aria-label={`Chuyển tới khuyến mãi ${index + 1}`} />
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-gray-50 py-16">
-        <div className="container mx-auto px-4">
-          <h2 className="text-2xl font-bold text-center text-[#00613d] mb-2 uppercase">TUYẾN PHỔ BIẾN</h2>
-          <p className="text-center text-gray-500 mb-8">Được khách hàng tin tưởng và lựa chọn</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {routeCards.map((card) => (
-              <div key={card.title} className="bg-white rounded-xl shadow overflow-hidden">
-                <div className="h-32 bg-gray-300 relative group overflow-hidden cursor-pointer">
-                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/10 transition z-10">
-                    <span className="text-white font-bold text-lg drop-shadow-md">{card.title}</span>
-                  </div>
-                  <img src={card.image} alt={card.imageAlt} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
-                </div>
-                <div className="p-4">
-                  {card.destinations.map((destination) => (
-                    <div key={`${card.title}-${destination.name}`} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
-                      <div>
-                        <h4 className="font-semibold text-gray-800">{destination.name}</h4>
-                        <p className="text-xs text-gray-500">{destination.distance}</p>
-                      </div>
-                      <span className="font-bold text-[#ef5222]">{destination.price}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <HomePromoSection />
+      <HomeRouteCardsSection />
     </div>
   );
 };
