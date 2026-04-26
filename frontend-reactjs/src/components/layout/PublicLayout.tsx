@@ -74,8 +74,8 @@ const PublicLayout = () => {
     { name: 'TRANG CHỦ', path: '/' },
     { name: 'LỊCH TRÌNH', path: '/lich-trinh' },
     { name: 'TRA CỨU VÉ', path: '/tra-cuu-ve' },
-    { name: 'HÓA ĐƠN', path: '/hoa-don' },
     { name: 'LIÊN HỆ', path: '/lien-he' },
+    { name: 'VỀ CHÚNG TÔI', path: '/ve-chung-toi' },
   ];
 
   return (

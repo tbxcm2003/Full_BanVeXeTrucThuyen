@@ -18,6 +18,8 @@ public interface VeXeRepository extends JpaRepository<VeXe, Integer> {
 
     Optional<VeXe> findByMaVe(String maVe);
 
+    Optional<VeXe> findByMaVeIgnoreCase(String maVe);
+
     List<VeXe> findByKhachHangIdOrderByNgayDatDesc(Integer khachHangId);
 
     Optional<VeXe> findByIdAndKhachHangId(Integer id, Integer khachHangId);

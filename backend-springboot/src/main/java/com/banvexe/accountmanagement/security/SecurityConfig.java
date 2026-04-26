@@ -36,6 +36,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/forgot-password/**").permitAll()
                 .requestMatchers("/api/accounts/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/catalog/**").permitAll()
+                .requestMatchers("/api/public/booking/**").permitAll()
                 .requestMatchers("/api/accounts/me/**").authenticated()
                 .requestMatchers("/api/auth/me").authenticated()
                 .requestMatchers("/api/me/booking/**").hasRole("KHACH_HANG")

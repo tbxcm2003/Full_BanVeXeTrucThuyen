@@ -2,14 +2,19 @@ package com.banvexe.accountmanagement.service.booking;
 
 import com.banvexe.accountmanagement.dto.booking.BookTicketRequest;
 import com.banvexe.accountmanagement.dto.booking.CustomerTicketDto;
+import com.banvexe.accountmanagement.dto.booking.GuestBookTicketRequest;
+import com.banvexe.accountmanagement.dto.booking.GuestPayTicketRequest;
 import com.banvexe.accountmanagement.dto.booking.PayTicketRequest;
+import com.banvexe.accountmanagement.dto.booking.PublicTicketLookupDto;
 import com.banvexe.accountmanagement.dto.booking.TripSummaryDto;
+import com.banvexe.accountmanagement.entity.AccountStatus;
 import com.banvexe.accountmanagement.entity.ChiTietVe;
 import com.banvexe.accountmanagement.entity.ChuyenXe;
 import com.banvexe.accountmanagement.entity.PaymentTxnStatus;
 import com.banvexe.accountmanagement.entity.ThanhToan;
 import com.banvexe.accountmanagement.entity.TicketStatus;
 import com.banvexe.accountmanagement.entity.TripRunStatus;
+import com.banvexe.accountmanagement.entity.UserAccount;
 import com.banvexe.accountmanagement.entity.VeXe;
 import com.banvexe.accountmanagement.repository.ChiTietVeRepository;
 import com.banvexe.accountmanagement.repository.ChuyenXeRepository;
@@ -27,6 +32,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -39,6 +45,7 @@ public class CustomerTicketService {
     private final ThanhToanRepository thanhToanRepository;
     private final UserAccountRepository userAccountRepository;
     private final BookingCatalogService bookingCatalogService;
+    private final PasswordEncoder passwordEncoder;
 
     public CustomerTicketService(
         VeXeRepository veXeRepository,
@@ -46,7 +53,8 @@ public class CustomerTicketService {
         ChiTietVeRepository chiTietVeRepository,
         ThanhToanRepository thanhToanRepository,
         UserAccountRepository userAccountRepository,
-        BookingCatalogService bookingCatalogService
+        BookingCatalogService bookingCatalogService,
+        PasswordEncoder passwordEncoder
     ) {
         this.veXeRepository = veXeRepository;
         this.chuyenXeRepository = chuyenXeRepository;
@@ -54,13 +62,24 @@ public class CustomerTicketService {
         this.thanhToanRepository = thanhToanRepository;
         this.userAccountRepository = userAccountRepository;
         this.bookingCatalogService = bookingCatalogService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Transactional
     public CustomerTicketDto book(String email, BookTicketRequest req) {
         var user = userAccountRepository.findByEmail(normalizeEmail(email))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
-        ChuyenXe chuyen = chuyenXeRepository.findByIdWithDetails(req.chuyenXeId())
+        return bookForUser(user, req.chuyenXeId(), req.maGhe(), req.ghiChu());
+    }
+
+    @Transactional
+    public CustomerTicketDto bookGuest(GuestBookTicketRequest req) {
+        UserAccount user = resolveOrCreateGuest(req.email(), req.soDienThoai(), req.hoTen());
+        return bookForUser(user, req.chuyenXeId(), req.maGhe(), req.ghiChu());
+    }
+
+    private CustomerTicketDto bookForUser(UserAccount user, Integer chuyenXeId, List<String> rawSeats, String ghiChu) {
+        ChuyenXe chuyen = chuyenXeRepository.findByIdWithDetails(chuyenXeId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy chuyến xe"));
 
         if (chuyen.getTrangThai() != TripRunStatus.CHUA_KHOI_HANH) {
@@ -71,7 +90,7 @@ public class CustomerTicketService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chuyến đã khởi hành hoặc hết hạn đặt");
         }
 
-        List<String> seats = req.maGhe().stream()
+        List<String> seats = rawSeats.stream()
             .map(s -> BookingCatalogService.normalizeSeatCode(chuyen, s))
             .filter(s -> s != null && !s.isBlank())
             .distinct()
@@ -110,7 +129,7 @@ public class CustomerTicketService {
         ve.setSoLuongGhe(seats.size());
         ve.setTongTien(tong);
         ve.setTrangThai(TicketStatus.CHO_THANH_TOAN);
-        ve.setGhiChu(req.ghiChu());
+        ve.setGhiChu(ghiChu);
         veXeRepository.save(ve);
 
         for (String seat : seats) {
@@ -125,11 +144,21 @@ public class CustomerTicketService {
 
     @Transactional
     public void pay(String email, Integer ticketId, PayTicketRequest req) {
-        if (!Boolean.TRUE.equals(req.dongYDieuKhoan())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Phải đồng ý điều khoản để thanh toán");
-        }
         var user = userAccountRepository.findByEmail(normalizeEmail(email))
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản"));
+        payForUser(user, ticketId, req.phuongThuc(), req.dongYDieuKhoan());
+    }
+
+    @Transactional
+    public void payGuest(Integer ticketId, GuestPayTicketRequest req) {
+        UserAccount user = resolveGuestByEmailPhone(req.email(), req.soDienThoai());
+        payForUser(user, ticketId, req.phuongThuc(), req.dongYDieuKhoan());
+    }
+
+    private void payForUser(UserAccount user, Integer ticketId, com.banvexe.accountmanagement.entity.PaymentMethod paymentMethod, Boolean agreeTerms) {
+        if (!Boolean.TRUE.equals(agreeTerms)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Phải đồng ý điều khoản để thanh toán");
+        }
         VeXe ve = veXeRepository.findByIdWithDetails(ticketId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé"));
 
@@ -143,7 +172,7 @@ public class CustomerTicketService {
         ThanhToan tt = new ThanhToan();
         tt.setVeXe(ve);
         tt.setSoTien(ve.getTongTien());
-        tt.setPhuongThuc(req.phuongThuc());
+        tt.setPhuongThuc(paymentMethod);
         tt.setMaGiaoDich("MOCK-" + UUID.randomUUID().toString().substring(0, 12));
         tt.setTrangThai(PaymentTxnStatus.THANH_CONG);
         tt.setNgayThanhToan(Instant.now());
@@ -167,6 +196,27 @@ public class CustomerTicketService {
         VeXe ve = veXeRepository.findByIdAndKhachHangId(ticketId, user.getId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé"));
         return toCustomerDto(veXeRepository.findByIdWithDetails(ve.getId()).orElse(ve));
+    }
+
+    public PublicTicketLookupDto lookupGuestTicket(String rawPhone, String rawMaVe) {
+        String phone = normalizePhone(rawPhone);
+        String maVe = rawMaVe == null ? "" : rawMaVe.trim();
+        if (phone.isBlank() || maVe.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vui lòng nhập số điện thoại và mã vé");
+        }
+
+        VeXe ve = veXeRepository.findByMaVeIgnoreCase(maVe)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
+
+        UserAccount user = userAccountRepository.findById(ve.getKhachHangId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
+
+        if (!phone.equals(normalizePhone(user.getPhone()))) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp");
+        }
+
+        VeXe detailed = veXeRepository.findByIdWithDetails(ve.getId()).orElse(ve);
+        return toPublicLookupDto(detailed, user);
     }
 
     @Transactional
@@ -250,7 +300,103 @@ public class CustomerTicketService {
         );
     }
 
+    private PublicTicketLookupDto toPublicLookupDto(VeXe ve, UserAccount user) {
+        CustomerTicketDto base = toCustomerDto(ve);
+        return new PublicTicketLookupDto(
+            base.id(),
+            base.maVe(),
+            base.trangThai(),
+            base.tongTien(),
+            base.ngayDat(),
+            base.ghiChu(),
+            user.getFullName(),
+            user.getPhone(),
+            user.getEmail(),
+            base.maGhe(),
+            base.chuyen()
+        );
+    }
+
     private String normalizeEmail(String email) {
         return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizePhone(String phone) {
+        return phone == null ? "" : phone.trim().replace(" ", "");
+    }
+
+    private String normalizeName(String fullName) {
+        return fullName == null ? "" : fullName.trim();
+    }
+
+    private UserAccount resolveOrCreateGuest(String rawEmail, String rawPhone, String rawName) {
+        String email = normalizeEmail(rawEmail);
+        String phone = normalizePhone(rawPhone);
+        String fullName = normalizeName(rawName);
+
+        if (email.isBlank() || phone.isBlank() || fullName.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thiếu thông tin khách hàng để đặt vé");
+        }
+
+        var byEmail = userAccountRepository.findByEmail(email);
+        if (byEmail.isPresent()) {
+            UserAccount user = byEmail.get();
+            if (user.getRole() != UserAccount.UserRole.KHACH_HANG) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email thuộc tài khoản không hợp lệ để đặt vé công khai");
+            }
+            if (user.getStatus() != AccountStatus.ACTIVE) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản khách hàng đang bị khóa");
+            }
+            if (user.getPhone() != null && !user.getPhone().isBlank() && !normalizePhone(user.getPhone()).equals(phone)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email và số điện thoại không khớp");
+            }
+
+            boolean needSave = false;
+            if (user.getPhone() == null || user.getPhone().isBlank()) {
+                if (userAccountRepository.existsByPhone(phone)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Số điện thoại đã được sử dụng");
+                }
+                user.setPhone(phone);
+                needSave = true;
+            }
+            if (user.getFullName() == null || user.getFullName().isBlank()) {
+                user.setFullName(fullName);
+                needSave = true;
+            }
+            return needSave ? userAccountRepository.save(user) : user;
+        }
+
+        if (userAccountRepository.existsByPhone(phone)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Số điện thoại đã được sử dụng");
+        }
+
+        UserAccount guest = new UserAccount();
+        guest.setEmail(email);
+        guest.setPhone(phone);
+        guest.setFullName(fullName);
+        guest.setRole(UserAccount.UserRole.KHACH_HANG);
+        guest.setStatus(AccountStatus.ACTIVE);
+        guest.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+        return userAccountRepository.save(guest);
+    }
+
+    private UserAccount resolveGuestByEmailPhone(String rawEmail, String rawPhone) {
+        String email = normalizeEmail(rawEmail);
+        String phone = normalizePhone(rawPhone);
+        if (email.isBlank() || phone.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thiếu thông tin khách hàng để thanh toán");
+        }
+        UserAccount user = userAccountRepository.findByEmail(email)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy khách hàng"));
+        if (user.getRole() != UserAccount.UserRole.KHACH_HANG) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tài khoản không hợp lệ");
+        }
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản khách hàng đang bị khóa");
+        }
+        if (user.getPhone() == null || user.getPhone().isBlank() || !normalizePhone(user.getPhone()).equals(phone)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email và số điện thoại không khớp");
+        }
+        return user;
     }
 }

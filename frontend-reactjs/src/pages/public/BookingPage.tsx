@@ -3,7 +3,7 @@ import { AlertCircle } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { api } from '../../api/client';
-import { getStoredEmail, getStoredName, getStoredPhone, getStoredRole } from '../../auth/storage';
+import { getStoredEmail, getStoredName, getStoredPhone, getStoredRole, getToken } from '../../auth/storage';
 
 type TripPayload = {
   id: number;
@@ -342,20 +342,38 @@ const BookingPage = () => {
         }
 
         const createdTickets: CreatedTicket[] = [];
-        const noteBase = `Chờ thanh toán | KH: ${fullName.trim()} - ${phone.trim()} - ${email.trim()}`;
+        const noteBase = `Đặt vé thành công | KH: ${fullName.trim()} - ${phone.trim()} - ${email.trim()}`;
+        const token = getToken();
+        const role = getStoredRole();
+        const useAuthenticatedBooking = Boolean(token && role === 'KHACH_HANG');
+        const bookEndpoint = useAuthenticatedBooking ? '/api/me/booking/tickets' : '/api/public/booking/tickets';
 
-        const outboundRes = await api.post<ApiResponse<CreatedTicket>>('/api/me/booking/tickets', {
+        const outboundRes = await api.post<ApiResponse<CreatedTicket>>(bookEndpoint, {
           chuyenXeId: outboundTrip.id,
           maGhe: selectedOutboundSeats,
           ghiChu: noteBase,
+          ...(useAuthenticatedBooking
+            ? {}
+            : {
+                hoTen: fullName.trim(),
+                soDienThoai: phone.trim(),
+                email: email.trim(),
+              }),
         });
         if (outboundRes.data?.data) createdTickets.push(outboundRes.data.data);
 
         if (isRoundTrip && returnTrip?.id && selectedReturnSeats.length > 0) {
-          const returnRes = await api.post<ApiResponse<CreatedTicket>>('/api/me/booking/tickets', {
+          const returnRes = await api.post<ApiResponse<CreatedTicket>>(bookEndpoint, {
             chuyenXeId: returnTrip.id,
             maGhe: selectedReturnSeats,
             ghiChu: `${noteBase} | Khứ hồi - chiều về`,
+            ...(useAuthenticatedBooking
+              ? {}
+              : {
+                  hoTen: fullName.trim(),
+                  soDienThoai: phone.trim(),
+                  email: email.trim(),
+                }),
           });
           if (returnRes.data?.data) createdTickets.push(returnRes.data.data);
         }

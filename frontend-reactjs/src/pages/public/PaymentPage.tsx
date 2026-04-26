@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { AlertCircle, ChevronLeft } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
+import { getStoredRole, getToken } from '../../auth/storage';
 
 type TripPayload = {
   id: number;
@@ -44,15 +45,16 @@ type ApiResponse<T> = {
 
 type PaymentMethodPayload = 'CHUYEN_KHOAN' | 'VI_DIEN_TU' | 'THE';
 
+const MERCHANT_NAME = 'VinaGo';
+const BANK_NAME = 'MB Bank';
+const BANK_ACCOUNT = '0123456789';
+
 const methods = [
   'Thanh toán VietQR',
   'ZaloPay',
   'VNPAY',
   'ShopeePay',
   'MoMo',
-  'Viettel Money',
-  'Thẻ ATM nội địa',
-  'Thẻ Visa/Master/JCB',
 ];
 
 const formatCurrency = (value: number) =>
@@ -66,8 +68,16 @@ const formatDateTime = (trip?: TripPayload) => {
 
 const toPaymentMethodPayload = (method: string): PaymentMethodPayload => {
   if (method === 'Thanh toán VietQR') return 'CHUYEN_KHOAN';
-  if (method === 'Thẻ ATM nội địa' || method === 'Thẻ Visa/Master/JCB') return 'THE';
   return 'VI_DIEN_TU';
+};
+
+const toQrAppCode = (method: string) => {
+  if (method === 'Thanh toán VietQR') return 'vietqr';
+  if (method === 'ZaloPay') return 'zalopay';
+  if (method === 'VNPAY') return 'vnpay';
+  if (method === 'ShopeePay') return 'shopeepay';
+  if (method === 'MoMo') return 'momo';
+  return 'vietqr';
 };
 
 const PaymentPage = () => {
@@ -102,6 +112,41 @@ const PaymentPage = () => {
   }
 
   const ticketCodes = (state.createdTickets ?? []).map((t) => t.maVe).filter(Boolean);
+  const shortTicketRef = ticketCodes.join('-').slice(0, 30);
+  const transferNote = `TT ${shortTicketRef || 'BOOKING'} ${state.customer.phone}`.slice(0, 60);
+
+  const qrData = useMemo(() => {
+    if (method === 'Thanh toán VietQR') {
+      return [
+        'PAYMENT',
+        `merchant=${MERCHANT_NAME}`,
+        `bank=${BANK_NAME}`,
+        `account=${BANK_ACCOUNT}`,
+        `amount=${Math.max(0, Math.round(totalAmount))}`,
+        `note=${transferNote}`,
+      ].join('|');
+    }
+
+    return [
+      'PAYMENT',
+      `provider=${toQrAppCode(method)}`,
+      `merchant=${MERCHANT_NAME}`,
+      `amount=${Math.max(0, Math.round(totalAmount))}`,
+      `ticket=${shortTicketRef || 'BOOKING'}`,
+      `phone=${state.customer.phone}`,
+    ].join('|');
+  }, [method, totalAmount, transferNote, shortTicketRef, state.customer.phone]);
+
+  const qrUrl = useMemo(() => {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=${encodeURIComponent(qrData)}`;
+  }, [qrData]);
+
+  const paymentGuide = useMemo(() => {
+    if (method === 'Thanh toán VietQR') {
+      return `Mở app ngân hàng, quét QR, kiểm tra số tiền và nội dung "${transferNote}" trước khi xác nhận.`;
+    }
+    return `Mở ứng dụng ${method}, quét mã QR và xác nhận thanh toán ${formatCurrency(totalAmount)}.`;
+  }, [method, totalAmount, transferNote]);
 
   const onFinish = () => {
     void (async () => {
@@ -110,11 +155,23 @@ const PaymentPage = () => {
       try {
         const phuongThuc = toPaymentMethodPayload(method);
         const tickets = state.createdTickets ?? [];
+        const token = getToken();
+        const role = getStoredRole();
+        const useAuthenticatedPayment = Boolean(token && role === 'KHACH_HANG');
         for (const ticket of tickets) {
-          await api.post<ApiResponse<null>>(`/api/me/booking/tickets/${ticket.id}/pay`, {
-            phuongThuc,
-            dongYDieuKhoan: true,
-          });
+          if (useAuthenticatedPayment) {
+            await api.post<ApiResponse<null>>(`/api/me/booking/tickets/${ticket.id}/pay`, {
+              phuongThuc,
+              dongYDieuKhoan: true,
+            });
+          } else {
+            await api.post<ApiResponse<null>>(`/api/public/booking/tickets/${ticket.id}/pay`, {
+              phuongThuc,
+              dongYDieuKhoan: true,
+              email: state.customer.email,
+              soDienThoai: state.customer.phone,
+            });
+          }
         }
         window.alert(`Thanh toán thành công ${tickets.length} vé.`);
         navigate('/tra-cuu-ve', {
@@ -173,14 +230,25 @@ const PaymentPage = () => {
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-4">
-          <p className="text-center text-sm text-gray-500">Tổng thanh toán</p>
+          <p className="text-center text-sm text-gray-500">Tổng tiền vé</p>
           <p className="text-center text-5xl font-extrabold text-[#e45a2f]">{formatCurrency(totalAmount)}</p>
           <div className="mt-4 rounded-xl bg-[#fafafa] p-4">
             <p className="mb-2 text-center text-sm text-[#e89b66]">Thời gian giữ chỗ còn lại 04 : 50</p>
-            <div className="mx-auto flex h-56 w-56 items-center justify-center rounded-md border-8 border-gray-900 bg-white">
-              <div className="h-24 w-24 rounded bg-[#0e5a32] text-center text-6xl font-black text-white leading-[96px]">f</div>
+            <div className="mx-auto w-fit rounded-2xl border border-[#f3b29e] bg-white p-3 shadow-sm">
+              <img
+                src={qrUrl}
+                alt={`QR thanh toán ${method}`}
+                className="h-56 w-56 rounded-lg border border-gray-200 object-cover"
+              />
             </div>
-            <p className="mt-3 text-center text-sm text-[#0e5a32]">Hướng dẫn thanh toán bằng {method}</p>
+            <p className="mt-3 text-center text-sm font-medium text-[#0e5a32]">{paymentGuide}</p>
+            {method === 'Thanh toán VietQR' && (
+              <div className="mt-3 rounded-lg border border-[#0e5a32]/15 bg-[#f6fcf8] p-3 text-xs text-gray-700">
+                <p><span className="font-semibold">Ngân hàng:</span> {BANK_NAME}</p>
+                <p><span className="font-semibold">Số tài khoản:</span> {BANK_ACCOUNT}</p>
+                <p><span className="font-semibold">Nội dung:</span> {transferNote}</p>
+              </div>
+            )}
           </div>
         </section>
 

@@ -13,7 +13,7 @@ import VehicleManagement from './pages/admin/VehicleManagement';
 import HomePage from './pages/public/HomePage';
 import SchedulePage from './pages/public/SchedulePage';
 import TicketSearchPage from './pages/public/TicketSearchPage';
-import InvoicePage from './pages/public/InvoicePage';
+import AboutPage from './pages/public/AboutPage';
 import ContactPage from './pages/public/ContactPage';
 import BookingGuidePage from './pages/public/BookingGuidePage';
 import BookingPage from './pages/public/BookingPage';
@@ -34,7 +34,7 @@ function App() {
           <Route path='tra-cuu-ve' element={<TicketSearchPage />} />
           <Route path='dat-ve' element={<BookingPage />} />
           <Route path='thanh-toan' element={<PaymentPage />} />
-          <Route path='hoa-don' element={<InvoicePage />} />
+          <Route path='ve-chung-toi' element={<AboutPage />} />
           <Route path='lien-he' element={<ContactPage />} />
           <Route path='huong-dan-dat-ve' element={<BookingGuidePage />} />
           <Route path='tai-khoan/thong-tin' element={<CustomerProfilePage />} />
