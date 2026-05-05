@@ -2,6 +2,7 @@ package com.banvexe.accountmanagement.controller;
 
 import com.banvexe.accountmanagement.dto.ApiResponse;
 import com.banvexe.accountmanagement.dto.booking.CustomerTicketDto;
+import com.banvexe.accountmanagement.dto.booking.GuestCancelTicketRequest;
 import com.banvexe.accountmanagement.dto.booking.GuestBookTicketRequest;
 import com.banvexe.accountmanagement.dto.booking.GuestPayTicketRequest;
 import com.banvexe.accountmanagement.dto.booking.PublicTicketLookupDto;
@@ -48,5 +49,11 @@ public class PublicBookingController {
     ) {
         PublicTicketLookupDto data = customerTicketService.lookupGuestTicket(phone, maVe);
         return ResponseEntity.ok(ApiResponse.success(data));
+    }
+
+    @PostMapping("/tickets/cancel")
+    public ResponseEntity<ApiResponse<Void>> cancelTicket(@Valid @RequestBody GuestCancelTicketRequest request) {
+        String msg = customerTicketService.cancelGuest(request.soDienThoai(), request.maVe());
+        return ResponseEntity.ok(ApiResponse.success(msg, null));
     }
 }

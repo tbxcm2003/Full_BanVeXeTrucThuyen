@@ -258,7 +258,9 @@ const SchedulePage = () => {
                     <td className="px-6 py-4 font-semibold text-[#ef5222]">
                       {route.tenTuyen || `${route.diemDi} - ${route.diemDen}`}
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{route.loaiXe || '--'}</td>
+                    <td className="px-6 py-4 text-gray-600">
+                      {route.loaiXe || <span className="italic">Chưa có xe</span>}
+                    </td>
                     <td className="px-6 py-4 text-gray-600">{route.khoangCach ? `${route.khoangCach} km` : '--'}</td>
                     <td className="px-6 py-4 text-gray-600">{formatDuration(route.thoiGianHanhTrinhPhut)}</td>
                     <td className="px-6 py-4 font-bold text-[#00613d]">{formatCurrency(route.giaVeCoBan)}</td>

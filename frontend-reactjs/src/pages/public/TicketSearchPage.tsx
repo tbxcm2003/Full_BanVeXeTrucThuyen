@@ -74,6 +74,9 @@ const TicketSearchPage = () => {
   const [dangTraCuu, setDangTraCuu] = useState(false);
   const [ticketResult, setTicketResult] = useState<TicketLookup | null>(null);
   const [traCuuError, setTraCuuError] = useState('');
+  const [dangHuy, setDangHuy] = useState(false);
+  const [huyError, setHuyError] = useState('');
+  const [huyMessage, setHuyMessage] = useState('');
 
   const invoiceTitle = useMemo(() => {
     if (!ticketResult) return 'Tra cứu vé';
@@ -105,12 +108,64 @@ const TicketSearchPage = () => {
           return;
         }
         setTicketResult(detail);
+        setHuyError('');
+        setHuyMessage('');
       } catch (error) {
         const axiosErr = error as { response?: { data?: { message?: string } } };
         setTicketResult(null);
         setTraCuuError(axiosErr.response?.data?.message || 'Không thể tra cứu vé. Vui lòng thử lại.');
       } finally {
         setDangTraCuu(false);
+      }
+    })();
+  };
+
+  const canRequestCancel = (ticket?: TicketLookup | null) => {
+    if (!ticket) return false;
+    if (ticket.trangThai === 'CHO_THANH_TOAN') return true;
+    if (ticket.trangThai === 'DA_THANH_TOAN') return true;
+    return false;
+  };
+
+  const onCancelTicket = () => {
+    void (async () => {
+      if (!ticketResult) return;
+      const maVe = ticketResult.maVe?.trim();
+      const soDienThoai = phone.trim();
+      if (!maVe || !soDienThoai) {
+        setHuyError('Vui lòng nhập số điện thoại và mã vé để hủy.');
+        return;
+      }
+      if (!canRequestCancel(ticketResult)) {
+        setHuyError('Vé không thể hủy ở trạng thái hiện tại.');
+        return;
+      }
+      const msg =
+        ticketResult.trangThai === 'CHO_THANH_TOAN'
+          ? 'Xác nhận hủy vé chờ thanh toán?'
+          : 'Gửi yêu cầu hủy vé? Nhân viên sẽ duyệt.';
+      if (!window.confirm(msg)) return;
+      setDangHuy(true);
+      setHuyError('');
+      setHuyMessage('');
+      try {
+        const res = await api.post<ApiResponse<null>>('/api/public/booking/tickets/cancel', {
+          soDienThoai,
+          maVe,
+        });
+        setHuyMessage(res.data?.message || 'Đã gửi yêu cầu hủy vé.');
+        const detailRes = await api.get<ApiResponse<TicketLookup>>('/api/public/booking/tickets/lookup', {
+          params: {
+            phone: soDienThoai,
+            maVe,
+          },
+        });
+        setTicketResult(detailRes.data?.data ?? null);
+      } catch (error) {
+        const axiosErr = error as { response?: { data?: { message?: string } } };
+        setHuyError(axiosErr.response?.data?.message || 'Không thể hủy vé. Vui lòng thử lại.');
+      } finally {
+        setDangHuy(false);
       }
     })();
   };
@@ -212,7 +267,13 @@ const TicketSearchPage = () => {
                     <p className="text-sm text-gray-500">Mã vé</p>
                     <p className="mt-1 font-mono text-lg font-bold text-[#ef5222]">{ticketResult.maVe}</p>
                     <p className="mt-3 text-sm text-gray-500">Trạng thái</p>
-                    <p className="font-semibold text-gray-800">{ticketResult.trangThai}</p>
+                    <p
+                      className={`font-semibold ${
+                        ticketResult.trangThai === 'DA_HUY' ? 'text-red-600' : 'text-gray-800'
+                      }`}
+                    >
+                      {ticketResult.trangThai}
+                    </p>
                     <p className="mt-3 text-sm text-gray-500">Ngày đặt</p>
                     <p className="font-semibold text-gray-800">{formatInstant(ticketResult.ngayDat)}</p>
                   </div>
@@ -223,7 +284,7 @@ const TicketSearchPage = () => {
                     <p className="mt-3 text-sm text-gray-500">Số điện thoại</p>
                     <p className="font-semibold text-gray-800">{ticketResult.soDienThoaiKhach || '--'}</p>
                     <p className="mt-3 text-sm text-gray-500">Email</p>
-                    <p className="font-semibold text-gray-800">{ticketResult.emailKhach || '--'}</p>
+                    <p className="break-all font-semibold text-gray-800">{ticketResult.emailKhach || '--'}</p>
                   </div>
 
                   <div className="rounded-2xl border border-gray-200 bg-white p-4 md:col-span-2">
@@ -257,6 +318,20 @@ const TicketSearchPage = () => {
                       <p className="text-2xl font-extrabold text-[#e45a2f]">{formatCurrency(ticketResult.tongTien)}</p>
                     </div>
                     {ticketResult.ghiChu && <p className="mt-3 text-sm text-gray-500">Ghi chú: {ticketResult.ghiChu}</p>}
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <button
+                        type="button"
+                        onClick={onCancelTicket}
+                        disabled={dangHuy || !canRequestCancel(ticketResult)}
+                        className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {dangHuy ? 'Đang xử lý...' : 'Hủy vé'}
+                      </button>
+                      <div className="text-sm">
+                        {huyMessage && <span className="text-green-700">{huyMessage}</span>}
+                        {huyError && <span className="text-red-600">{huyError}</span>}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

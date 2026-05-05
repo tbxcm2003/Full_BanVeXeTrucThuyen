@@ -37,6 +37,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/accounts/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/catalog/**").permitAll()
                 .requestMatchers("/api/public/booking/**").permitAll()
+                .requestMatchers("/api/public/assistant/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/public/branding").permitAll()
                 .requestMatchers("/api/accounts/me/**").authenticated()
                 .requestMatchers("/api/auth/me").authenticated()

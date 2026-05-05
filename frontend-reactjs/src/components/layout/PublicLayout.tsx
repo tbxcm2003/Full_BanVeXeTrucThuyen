@@ -5,6 +5,7 @@ import { User, Phone, Mail, MapPin, Menu, X, UserCircle2, History, KeyRound, Log
 import { clearAuth, getStoredEmail, getStoredName, getStoredRole } from '../../auth/storage';
 import type { PublicBranding } from '../../types/publicBranding';
 import logoImage from '../../assets/logo.png';
+import HelpBubble from '../common/HelpBubble';
 
 const defaultBranding: PublicBranding = { logoUrl: null, bannerUrl: null };
 
@@ -293,6 +294,8 @@ const PublicLayout = () => {
           <p>© 2025 | Bản quyền thuộc về Công ty Cổ Phần Vina Go - Vina Go Bus Lines</p>
         </div>
       </footer>
+
+      <HelpBubble />
     </div>
   );
 };

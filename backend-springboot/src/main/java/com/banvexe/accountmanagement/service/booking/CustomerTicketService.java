@@ -242,6 +242,27 @@ public class CustomerTicketService {
         return toPublicLookupDto(detailed, kh);
     }
 
+    @Transactional
+    public String cancelGuest(String rawPhone, String rawMaVe) {
+        String phone = normalizePhone(rawPhone);
+        String maVe = rawMaVe == null ? "" : rawMaVe.trim();
+        if (phone.isBlank() || maVe.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vui lòng nhập số điện thoại và mã vé");
+        }
+
+        VeXe ve = veXeRepository.findByMaVeIgnoreCase(maVe)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
+
+        KhachHang kh = khachHangRepository.findById(ve.getKhachHangId())
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
+
+        if (!phone.equals(normalizePhone(kh.getPhone()))) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp");
+        }
+
+        return cancelOrRequestCancelForVe(ve);
+    }
+
     /**
      * @return thông điệp thành công (hiển thị cho khách)
      */
@@ -252,6 +273,11 @@ public class CustomerTicketService {
         KhachHang kh = requireKhachForLoggedIn(user);
         VeXe ve = veXeRepository.findByIdAndKhachHangId(ticketId, kh.getId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé"));
+
+        return cancelOrRequestCancelForVe(ve);
+    }
+
+    private String cancelOrRequestCancelForVe(VeXe ve) {
 
         if (ve.getTrangThai() == TicketStatus.DANG_XU_LY) {
             throw new ResponseStatusException(

@@ -219,14 +219,6 @@ const PaymentPage = () => {
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-500">Vé đã được lưu ở trạng thái chờ thanh toán. Chọn phương thức và hoàn tất theo hướng dẫn bên cạnh.</p>
-          <button
-            type="button"
-            disabled={dangThanhToan}
-            onClick={onFinish}
-            className="mt-4 w-full rounded-full bg-[#ef5222] py-3 font-semibold text-white hover:bg-[#d84a1e] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {dangThanhToan ? 'Đang xác nhận thanh toán...' : 'Thanh toán thành công'}
-          </button>
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5 lg:col-span-4">
@@ -234,13 +226,19 @@ const PaymentPage = () => {
           <p className="text-center text-5xl font-extrabold text-[#e45a2f]">{formatCurrency(totalAmount)}</p>
           <div className="mt-4 rounded-xl bg-[#fafafa] p-4">
             <p className="mb-2 text-center text-sm text-[#e89b66]">Thời gian giữ chỗ còn lại 04 : 50</p>
-            <div className="mx-auto w-fit rounded-2xl border border-[#f3b29e] bg-white p-3 shadow-sm">
+            <button
+              type="button"
+              disabled={dangThanhToan}
+              onClick={onFinish}
+              className="mx-auto block w-fit rounded-2xl border border-[#f3b29e] bg-white p-3 shadow-sm transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70"
+              aria-label="Quét QR để thanh toán"
+            >
               <img
                 src={qrUrl}
                 alt={`QR thanh toán ${method}`}
                 className="h-56 w-56 rounded-lg border border-gray-200 object-cover"
               />
-            </div>
+            </button>
             <p className="mt-3 text-center text-sm font-medium text-[#0e5a32]">{paymentGuide}</p>
             {method === 'Thanh toán VietQR' && (
               <div className="mt-3 rounded-lg border border-[#0e5a32]/15 bg-[#f6fcf8] p-3 text-xs text-gray-700">
