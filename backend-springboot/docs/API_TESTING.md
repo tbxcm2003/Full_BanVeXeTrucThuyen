@@ -4,8 +4,8 @@ Tài liệu này mô tả cách gọi API REST của module Spring Boot (`backen
 
 ## Điều kiện
 
-1. Đã chạy MariaDB/MySQL, tạo database và nạp dữ liệu từ `database/data.sql` (tên DB mặc định trong script: `QuanLyVeXe`).
-2. `application.yml` trùng **URL**, **user**, **password** và **tên database** với máy của bạn (driver: MariaDB).
+1. Đã chạy MySQL, tạo database và nạp dữ liệu từ `database/data.sql` (tên DB mặc định trong script: `QuanLyVeXe`).
+2. `application.yml` trùng **URL**, **user**, **password** và **tên database** với máy của bạn (driver: MySQL).
 3. Ứng dụng đang chạy (mặc định `http://localhost:8080`).
 
 ## Xác thực JWT
