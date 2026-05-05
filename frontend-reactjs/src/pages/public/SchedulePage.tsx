@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
-import axios from 'axios';
+import { api } from '../../api/client';
 
 type RouteSummary = {
   id: number;
@@ -49,7 +49,7 @@ const SchedulePage = () => {
     }
     const timeoutId = window.setTimeout(async () => {
       try {
-        const { data } = await axios.get<{ data?: string[] }>('/api/catalog/origins', {
+        const { data } = await api.get<{ data?: string[] }>('/api/catalog/origins', {
           params: { keyword: diemDi.trim() },
         });
         setGoiYDiemDi(data?.data ?? []);
@@ -67,7 +67,7 @@ const SchedulePage = () => {
     }
     const timeoutId = window.setTimeout(async () => {
       try {
-        const { data } = await axios.get<{ data?: string[] }>('/api/catalog/destinations', {
+        const { data } = await api.get<{ data?: string[] }>('/api/catalog/destinations', {
           params: { keyword: diemDen.trim() },
         });
         setGoiYDiemDen(data?.data ?? []);
@@ -82,7 +82,7 @@ const SchedulePage = () => {
     setDangTai(true);
     setThongBao('');
     try {
-      const { data } = await axios.get<{ data?: RouteSummary[] }>('/api/catalog/routes', {
+      const { data } = await api.get<{ data?: RouteSummary[] }>('/api/catalog/routes', {
         params: {
           diemDi: origin.trim() || undefined,
           diemDen: destination.trim() || undefined,
@@ -95,7 +95,7 @@ const SchedulePage = () => {
         uniquePairs.map(async (pair) => {
           const [from, to] = pair.split('|');
           try {
-            const tripRes = await axios.get<{ data?: TripSummary[] }>('/api/catalog/trips', {
+            const tripRes = await api.get<{ data?: TripSummary[] }>('/api/catalog/trips', {
               params: {
                 diemDi: from,
                 diemDen: to,

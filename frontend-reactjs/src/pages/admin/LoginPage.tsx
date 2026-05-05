@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { LogIn, Lock, Mail, ArrowLeft } from 'lucide-react';
-import axios from 'axios';
+import { api } from '../../api/client';
 import { setAuth, setLastLoginEmailForHint, getLastLoginEmailForHint } from '../../auth/storage';
 import logoImage from '../../assets/logo.png';
 
@@ -83,7 +83,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setLoading(true);
     try {
-      await axios.post('/api/auth/register', { email, password, fullName, phone });
+      await api.post('/api/auth/register', { email, password, fullName, phone });
       setRegisterStep('verifyOtp');
       setOtp('');
       setSuccess('Đã gửi mã xác thực tới email của bạn.');
@@ -99,7 +99,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setSendingOtp(true);
     try {
-      await axios.post('/api/auth/resend-otp', { email });
+      await api.post('/api/auth/resend-otp', { email });
       setSuccess('Đã gửi lại mã xác thực.');
     } catch (e: unknown) {
       const response = (e as { response?: { data?: { message?: string } } })?.response?.data;
@@ -114,7 +114,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setLoading(true);
     try {
-      await axios.post('/api/auth/verify-email', { email, otp });
+      await api.post('/api/auth/verify-email', { email, otp });
       returnToLoginWithMessage('Đăng ký thành công. Bạn có thể đăng nhập.');
     } catch (e: unknown) {
       const response = (e as { response?: { data?: { message?: string } } })?.response?.data;
@@ -129,7 +129,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setLoading(true);
     try {
-      await axios.post('/api/auth/forgot-password/request-otp', { email });
+      await api.post('/api/auth/forgot-password/request-otp', { email });
       setForgotStep('verifyOtp');
       setOtp('');
       setSuccess('Đã gửi mã xác thực tới email.');
@@ -145,7 +145,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setSendingOtp(true);
     try {
-      await axios.post('/api/auth/forgot-password/request-otp', { email });
+      await api.post('/api/auth/forgot-password/request-otp', { email });
       setSuccess('Đã gửi lại mã xác thực.');
     } catch (e: unknown) {
       const response = (e as { response?: { data?: { message?: string } } })?.response?.data;
@@ -160,7 +160,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setLoading(true);
     try {
-      await axios.post('/api/auth/forgot-password/verify-otp', { email, otp });
+      await api.post('/api/auth/forgot-password/verify-otp', { email, otp });
       setForgotStep('newPassword');
       setNewPassword('');
       setConfirmPassword('');
@@ -178,7 +178,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setLoading(true);
     try {
-      await axios.post('/api/auth/forgot-password/reset', { email, newPassword, confirmPassword });
+      await api.post('/api/auth/forgot-password/reset', { email, newPassword, confirmPassword });
       returnToLoginWithMessage('Đặt lại mật khẩu thành công. Vui lòng đăng nhập.');
     } catch (e: unknown) {
       const response = (e as { response?: { data?: { message?: string } } })?.response?.data;
@@ -193,7 +193,7 @@ const LoginPage: React.FC = () => {
     clearNotice();
     setLoading(true);
     try {
-      const { data } = await axios.post<{
+      const { data } = await api.post<{
         accessToken: string;
         tokenType: string;
         email: string;

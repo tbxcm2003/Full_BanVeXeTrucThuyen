@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import axios from 'axios';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
+import { api } from '../../api/client';
 import type { PublicBranding } from '../../types/publicBranding';
 import {
   getVehicleKind,
@@ -88,7 +88,7 @@ const HomePage = () => {
     }
     const timeoutId = window.setTimeout(async () => {
       try {
-        const { data } = await axios.get<{ data?: string[] }>('/api/catalog/origins', {
+        const { data } = await api.get<{ data?: string[] }>('/api/catalog/origins', {
           params: { keyword: diemDi },
         });
         setGoiYDiemDi(data?.data ?? []);
@@ -106,7 +106,7 @@ const HomePage = () => {
     }
     const timeoutId = window.setTimeout(async () => {
       try {
-        const { data } = await axios.get<{ data?: string[] }>('/api/catalog/destinations', {
+        const { data } = await api.get<{ data?: string[] }>('/api/catalog/destinations', {
           params: { keyword: diemDen },
         });
         setGoiYDiemDen(data?.data ?? []);
@@ -123,7 +123,7 @@ const HomePage = () => {
       return routeDurationCache[key];
     }
     try {
-      const { data } = await axios.get<{ data?: RouteSummary[] }>('/api/catalog/routes', {
+      const { data } = await api.get<{ data?: RouteSummary[] }>('/api/catalog/routes', {
         params: { diemDi: trip.diemDi, diemDen: trip.diemDen },
       });
       const routes = data?.data ?? [];
@@ -171,7 +171,7 @@ const HomePage = () => {
     });
     try {
       const [outboundRes, returnRes] = await Promise.all([
-        axios.get<{ data?: TripSummary[] }>('/api/catalog/trips', {
+        api.get<{ data?: TripSummary[] }>('/api/catalog/trips', {
           params: {
             diemDi: diemDi.trim(),
             diemDen: diemDen.trim(),
@@ -180,7 +180,7 @@ const HomePage = () => {
           },
         }),
         tripType === 'round-trip'
-          ? axios.get<{ data?: TripSummary[] }>('/api/catalog/trips', {
+          ? api.get<{ data?: TripSummary[] }>('/api/catalog/trips', {
               params: {
                 diemDi: diemDen.trim(),
                 diemDen: diemDi.trim(),
@@ -259,7 +259,7 @@ const HomePage = () => {
     if (soDoGheTheoChuyen[tripId]) return;
     setDangTaiSoDoGhe(true);
     try {
-      const { data } = await axios.get<{ data?: SeatMapResponse }>(`/api/catalog/trips/${tripId}/seats`);
+      const { data } = await api.get<{ data?: SeatMapResponse }>(`/api/catalog/trips/${tripId}/seats`);
       const seatMap = data?.data;
       if (!seatMap) return;
       setSoDoGheTheoChuyen((prev) => ({ ...prev, [tripId]: seatMap }));
@@ -391,7 +391,7 @@ const HomePage = () => {
 
     if (!soDoGheTheoChuyen[restoredTrip.id]) {
       setDangTaiSoDoGhe(true);
-      axios
+      api
         .get<{ data?: SeatMapResponse }>(`/api/catalog/trips/${restoredTrip.id}/seats`)
         .then((res) => {
           const seatMap = res.data?.data;
@@ -555,7 +555,7 @@ const HomePage = () => {
     void (async () => {
       const results = await Promise.all(
         missing.map((t) =>
-          axios
+          api
             .get<{ data?: SeatMapResponse }>(`/api/catalog/trips/${t.id}/seats`)
             .then((r) => ({ id: t.id, map: r.data?.data as SeatMapResponse | undefined }))
             .catch(() => ({ id: t.id, map: undefined })),

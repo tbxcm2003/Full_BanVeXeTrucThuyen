@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import axios from 'axios';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../../api/client';
 import { User, Phone, Mail, MapPin, Menu, X, UserCircle2, History, KeyRound, LogOut, ChevronDown } from 'lucide-react';
 import { clearAuth, getStoredEmail, getStoredName, getStoredRole } from '../../auth/storage';
 import type { PublicBranding } from '../../types/publicBranding';
@@ -40,7 +40,7 @@ const PublicLayout = () => {
   }, [location.pathname]);
 
   useEffect(() => {
-    void axios
+    void api
       .get<PublicBranding>('/api/public/branding')
       .then((r) => setBranding(r.data))
       .catch(() => setBranding(defaultBranding));

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MessageCircle, Send, X } from 'lucide-react';
-import axios from 'axios';
+import { isAxiosError } from 'axios';
+import { api } from '../../api/client';
 
 type ApiResponse<T> = {
   code: number;
@@ -37,13 +38,13 @@ const HelpBubble = () => {
 
   const handleQuestion = async (question: string) => {
     try {
-      const { data } = await axios.post<ApiResponse<AssistantChatResponse>>('/api/public/assistant/chat', {
+      const { data } = await api.post<ApiResponse<AssistantChatResponse>>('/api/public/assistant/chat', {
         question,
       });
       const answer = data?.data?.answer?.trim();
       return answer || 'Không thể trả lời lúc này. Bạn thử lại sau nhé.';
     } catch (error) {
-      if (axios.isAxiosError<ApiResponse<never>>(error)) {
+      if (isAxiosError<ApiResponse<never>>(error)) {
         const apiMessage = error.response?.data?.message?.trim();
         if (apiMessage) {
           return apiMessage;

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { api } from '../../api/client';
 import { getStoredEmail, getStoredName, getStoredPhone, getStoredRole, getToken } from '../../auth/storage';
 import { collectHienThiByMaGhe, displaySeatCodes, getSeatLayoutByVehicleType, type SeatMapResponse, type SeatStatus } from '../../utils/seatMapLayout';
@@ -157,7 +156,7 @@ const BookingPage = () => {
   useEffect(() => {
     if (!outboundTrip?.id) return;
     setLoadingOut(true);
-    axios
+    api
       .get<{ data?: SeatMapResponse }>(`/api/catalog/trips/${outboundTrip.id}/seats`)
       .then((res) => setOutboundMap(res.data?.data ?? null))
       .finally(() => setLoadingOut(false));
@@ -166,7 +165,7 @@ const BookingPage = () => {
   useEffect(() => {
     if (!returnTrip?.id) return;
     setLoadingRet(true);
-    axios
+    api
       .get<{ data?: SeatMapResponse }>(`/api/catalog/trips/${returnTrip.id}/seats`)
       .then((res) => setReturnMap(res.data?.data ?? null))
       .finally(() => setLoadingRet(false));
