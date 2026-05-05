@@ -50,6 +50,7 @@ type CreatedTicket = {
   id: number;
   maVe: string;
   trangThai: string;
+  ngayDat?: string;
 };
 
 const BOOKING_PHONE_KEY = 'banvexe_booking_phone';

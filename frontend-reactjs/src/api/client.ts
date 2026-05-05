@@ -1,7 +1,12 @@
 import axios from 'axios';
 import { clearAuth, getToken } from '../auth/storage';
 
-export const api = axios.create();
+const rawApiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim();
+const apiBaseURL = rawApiBase ? rawApiBase.replace(/\/+$/, '') : undefined;
+
+export const api = axios.create({
+  baseURL: apiBaseURL,
+});
 
 api.interceptors.request.use((config) => {
   const t = getToken();

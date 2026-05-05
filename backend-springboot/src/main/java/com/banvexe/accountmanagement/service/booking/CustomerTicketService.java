@@ -48,6 +48,7 @@ public class CustomerTicketService {
     private final UserAccountRepository userAccountRepository;
     private final KhachHangRepository khachHangRepository;
     private final BookingCatalogService bookingCatalogService;
+    private final BookingNotificationService bookingNotificationService;
 
     public CustomerTicketService(
         VeXeRepository veXeRepository,
@@ -56,7 +57,8 @@ public class CustomerTicketService {
         ThanhToanRepository thanhToanRepository,
         UserAccountRepository userAccountRepository,
         KhachHangRepository khachHangRepository,
-        BookingCatalogService bookingCatalogService
+        BookingCatalogService bookingCatalogService,
+        BookingNotificationService bookingNotificationService
     ) {
         this.veXeRepository = veXeRepository;
         this.chuyenXeRepository = chuyenXeRepository;
@@ -65,6 +67,7 @@ public class CustomerTicketService {
         this.userAccountRepository = userAccountRepository;
         this.khachHangRepository = khachHangRepository;
         this.bookingCatalogService = bookingCatalogService;
+        this.bookingNotificationService = bookingNotificationService;
     }
 
     @Transactional
@@ -158,6 +161,7 @@ public class CustomerTicketService {
             ct.setSoGhe(seat);
             chiTietVeRepository.save(ct);
         }
+        bookingNotificationService.sendBookingSuccess(kh, ve);
 
         return toCustomerDto(veXeRepository.findByIdWithDetails(ve.getId()).orElse(ve));
     }
@@ -173,6 +177,17 @@ public class CustomerTicketService {
     public void payGuest(Integer ticketId, GuestPayTicketRequest req) {
         KhachHang kh = resolveGuestByEmailPhone(req.email(), req.soDienThoai());
         payForKhach(kh, ticketId, req.phuongThuc(), req.dongYDieuKhoan());
+    }
+
+    public KhachHang resolveGuestForPayment(String email, String soDienThoai, String hoTen) {
+        KhachHang kh = resolveGuestByEmailPhone(email, soDienThoai);
+        String normalizedName = normalizeName(hoTen);
+        if (!normalizedName.isBlank() && kh.getFullName() != null && !kh.getFullName().isBlank()) {
+            if (!kh.getFullName().trim().equalsIgnoreCase(normalizedName)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Họ tên không khớp với hồ sơ khách hàng");
+            }
+        }
+        return kh;
     }
 
     private void payForKhach(
@@ -201,6 +216,7 @@ public class CustomerTicketService {
 
         ve.setTrangThai(TicketStatus.DA_THANH_TOAN);
         veXeRepository.save(ve);
+        bookingNotificationService.sendPaymentSuccess(kh, List.of(ve), tt.getMaGiaoDich());
     }
 
     public List<CustomerTicketDto> myTickets(String email) {
@@ -230,8 +246,12 @@ public class CustomerTicketService {
 
         VeXe ve = veXeRepository.findByMaVeIgnoreCase(maVe)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
+        Integer khachHangId = ve.getKhachHangId();
+        if (khachHangId == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp");
+        }
 
-        KhachHang kh = khachHangRepository.findById(ve.getKhachHangId())
+        KhachHang kh = khachHangRepository.findById(khachHangId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
 
         if (!phone.equals(normalizePhone(kh.getPhone()))) {
@@ -252,8 +272,12 @@ public class CustomerTicketService {
 
         VeXe ve = veXeRepository.findByMaVeIgnoreCase(maVe)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
+        Integer khachHangId = ve.getKhachHangId();
+        if (khachHangId == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp");
+        }
 
-        KhachHang kh = khachHangRepository.findById(ve.getKhachHangId())
+        KhachHang kh = khachHangRepository.findById(khachHangId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy vé phù hợp"));
 
         if (!phone.equals(normalizePhone(kh.getPhone()))) {

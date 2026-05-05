@@ -34,6 +34,17 @@ interface Account {
   status: 'ACTIVE' | 'INACTIVE' | 'PENDING';
 }
 
+type RawAccount = {
+  id?: unknown;
+  email?: unknown;
+  fullName?: unknown;
+  phone?: unknown;
+  status?: unknown;
+};
+
+const getErrorMessage = (error: unknown, fallback: string) =>
+  (error as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback;
+
 const CustomerAccountManagement: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,11 +89,11 @@ const CustomerAccountManagement: React.FC = () => {
         setTotalKhachHang(toNum((pageData as { totalElements: unknown }).totalElements));
       }
 
-      const transformed: Account[] = (Array.isArray(rawData) ? rawData : []).map((item: any) => ({
-        id: item.id,
-        email: item.email || '',
-        name: item.fullName || 'N/A',
-        phone: item.phone,
+      const transformed: Account[] = (Array.isArray(rawData) ? (rawData as RawAccount[]) : []).map((item) => ({
+        id: toNum(item.id),
+        email: String(item.email ?? ''),
+        name: String(item.fullName ?? 'N/A'),
+        phone: item.phone == null ? undefined : String(item.phone),
         role: type,
         status: (item.status === 'ACTIVE' || item.status === 1 ? 'ACTIVE' : 'INACTIVE') as Account['status'],
       }));
@@ -186,9 +197,9 @@ const CustomerAccountManagement: React.FC = () => {
       void fetchAccounts('CUSTOMER');
       void fetchStats();
       closeModal();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving account:', error);
-      alert(error.response?.data?.message || 'Có lỗi xảy ra khi lưu tài khoản!');
+      alert(getErrorMessage(error, 'Có lỗi xảy ra khi lưu tài khoản!'));
     } finally {
       setIsSubmitting(false);
     }
@@ -201,9 +212,9 @@ const CustomerAccountManagement: React.FC = () => {
       await api.delete(`${apiUrl}${endpoint}`);
       void fetchAccounts('CUSTOMER');
       void fetchStats();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting account:', error);
-      alert(error.response?.data?.message || 'Có lỗi xảy ra khi xóa tài khoản!');
+      alert(getErrorMessage(error, 'Có lỗi xảy ra khi xóa tài khoản!'));
     }
   };
 
@@ -214,9 +225,9 @@ const CustomerAccountManagement: React.FC = () => {
       await api.put(`${apiUrl}${endpoint}`, { status: newStatus });
       void fetchAccounts('CUSTOMER');
       void fetchStats();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error toggling status:', error);
-      alert(error.response?.data?.message || 'Có lỗi xảy ra khi cập nhật trạng thái!');
+      alert(getErrorMessage(error, 'Có lỗi xảy ra khi cập nhật trạng thái!'));
     }
   };
 

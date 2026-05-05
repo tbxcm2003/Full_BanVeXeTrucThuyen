@@ -4,13 +4,13 @@ spring:
   application:
     name: quan-ly-tai-khoan
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://localhost:3306/QuanLyVeXe?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8}
     driver-class-name: org.mariadb.jdbc.Driver
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:validate}
       naming:
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
     show-sql: false
@@ -35,6 +35,12 @@ spring:
           auth: true
           starttls:
             enable: true
+  sql:
+    init:
+      mode: always
+      schema-locations: ${SPRING_SQL_INIT_SCHEMA_LOCATIONS:file:../database/data.sql}
+      encoding: UTF-8
+      continue-on-error: true
 
 server:
   port: ${SERVER_PORT:8080}
@@ -51,6 +57,29 @@ app:
   otp:
     expiration-minutes: ${APP_OTP_EXPIRATION_MINUTES:5}
   expose-internal-error-message: ${APP_EXPOSE_INTERNAL_ERROR_MESSAGE:true}
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  booking:
+    hold-minutes: ${APP_BOOKING_HOLD_MINUTES:5}
+    hold-check-delay-ms: ${APP_BOOKING_HOLD_CHECK_DELAY_MS:30000}
+    brand:
+      name: ${APP_BOOKING_BRAND_NAME:BanVeXe}
+      logo-url: ${APP_BOOKING_BRAND_LOGO_URL:https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg}
+      hotline: ${APP_BOOKING_BRAND_HOTLINE:1900 1234}
+      support-email: ${APP_BOOKING_BRAND_SUPPORT_EMAIL:support@banvexe.vn}
+      primary-color: ${APP_BOOKING_BRAND_PRIMARY_COLOR:#ef5222}
+      secondary-color: ${APP_BOOKING_BRAND_SECONDARY_COLOR:#f97316}
+      success-color: ${APP_BOOKING_BRAND_SUCCESS_COLOR:#059669}
+      website-url: ${APP_BOOKING_BRAND_WEBSITE_URL:http://localhost:5173}
+      ticket-lookup-url: ${APP_BOOKING_BRAND_TICKET_LOOKUP_URL:http://localhost:5173/tra-cuu-ve}
+      history-url: ${APP_BOOKING_BRAND_HISTORY_URL:http://localhost:5173/lich-su-dat-ve}
+  payos:
+    client-id: ${PAYOS_CLIENT_ID:}
+    api-key: ${PAYOS_API_KEY:}
+    checksum-key: ${PAYOS_CHECKSUM_KEY:}
+    base-url: ${PAYOS_BASE_URL:https://api-merchant.payos.vn}
+    return-url: ${PAYOS_RETURN_URL:http://localhost:5173/thanh-toan/ket-qua}
+    cancel-url: ${PAYOS_CANCEL_URL:http://localhost:5173/thanh-toan}
   gemini:
     api-key: ${GEMINI_API_KEY:}
     model: ${GEMINI_MODEL:gemini-2.0-flash}

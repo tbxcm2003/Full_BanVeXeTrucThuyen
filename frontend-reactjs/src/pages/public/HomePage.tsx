@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom';
 import type { PublicBranding } from '../../types/publicBranding';
@@ -23,6 +23,12 @@ import type {
   TripSummary,
   VehicleFilterKey,
 } from './home/homeTypes';
+
+const normalizeText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 
 const HomePage = () => {
   const navigate = useNavigate();
@@ -488,12 +494,6 @@ const HomePage = () => {
     }
   };
 
-  const norm = (value: string) =>
-    value
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-
   const toggleTimeFilter = (key: TimeFilterKey) => {
     setTimeFilters((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -509,7 +509,7 @@ const HomePage = () => {
     setDeckFilters({ top: false, bottom: false });
   };
 
-  const matchesTimeFilter = (trip: TripSummary) => {
+  const matchesTimeFilter = useCallback((trip: TripSummary) => {
     const selected = Object.entries(timeFilters).filter(([, v]) => v).map(([k]) => k as TimeFilterKey);
     if (!selected.length) return true;
     const hour = Number((trip.gioDi || '00:00:00').split(':')[0] ?? 0);
@@ -519,18 +519,18 @@ const HomePage = () => {
       if (k === 'afternoon') return hour >= 12 && hour < 18;
       return hour >= 18 && hour < 24;
     });
-  };
+  }, [timeFilters]);
 
-  const matchesVehicleFilter = (trip: TripSummary) => {
+  const matchesVehicleFilter = useCallback((trip: TripSummary) => {
     const selected = Object.entries(vehicleFilters).filter(([, v]) => v).map(([k]) => k as VehicleFilterKey);
     if (!selected.length) return true;
-    const kind = norm(trip.loaiXe || '');
+    const kind = normalizeText(trip.loaiXe || '');
     return selected.some((k) => {
       if (k === 'ghe') return kind.includes('ghe');
       if (k === 'giuong') return kind.includes('giuong');
       return kind.includes('limousine') || kind.includes('limosine');
     });
-  };
+  }, [vehicleFilters]);
 
   const applyAllFilters = (trips: TripSummary[]) =>
     trips.filter((trip) => matchesTimeFilter(trip) && matchesVehicleFilter(trip));
@@ -573,7 +573,7 @@ const HomePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [hasSeatZoneFilter, activeResultTab, danhSachChuyen, danhSachChuyenVe, timeFilters, vehicleFilters, seatRowFilters, deckFilters, soDoGheTheoChuyen]);
+  }, [hasSeatZoneFilter, activeResultTab, danhSachChuyen, danhSachChuyenVe, timeFilters, vehicleFilters, seatRowFilters, deckFilters, soDoGheTheoChuyen, matchesTimeFilter, matchesVehicleFilter]);
 
   return (
     <div className="bg-white">

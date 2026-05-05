@@ -2,6 +2,7 @@ package com.banvexe.accountmanagement.repository;
 
 import com.banvexe.accountmanagement.entity.TicketStatus;
 import com.banvexe.accountmanagement.entity.VeXe;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,6 +23,8 @@ public interface VeXeRepository extends JpaRepository<VeXe, Integer> {
     Optional<VeXe> findByMaVeIgnoreCase(String maVe);
 
     List<VeXe> findByKhachHangIdOrderByNgayDatDesc(Integer khachHangId);
+
+    List<VeXe> findTop200ByTrangThaiAndNgayDatBeforeOrderByNgayDatAsc(TicketStatus trangThai, Instant cutoff);
 
     Optional<VeXe> findByIdAndKhachHangId(Integer id, Integer khachHangId);
 

@@ -281,7 +281,7 @@ const TicketManagement: React.FC = () => {
 
   const totalPages = data?.totalPages ?? 0;
   const total = data?.totalElements ?? 0;
-  const list = data?.content ?? [];
+  const list = useMemo(() => data?.content ?? [], [data?.content]);
 
   const displayTickets = useMemo(() => {
     const q = ticketSearch.trim().toLowerCase();

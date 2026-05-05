@@ -6,8 +6,39 @@ const PHONE_KEY = 'banvexe_admin_phone';
 /** Lưu email từng đăng nhập thành công; không xóa khi đăng xuất (gợi ý lần sau + autocomplete). */
 const LAST_LOGIN_EMAIL_KEY = 'banvexe_last_login_email';
 
+function decodeJwtPayload(token: string): { exp?: number } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`)
+        .join('')
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp) return false;
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  return payload.exp <= nowInSeconds;
+}
+
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return null;
+
+  if (isTokenExpired(token)) {
+    clearAuth();
+    return null;
+  }
+  return token;
 }
 
 export function setAuth(token: string, email: string, role: string, name?: string, phone?: string) {

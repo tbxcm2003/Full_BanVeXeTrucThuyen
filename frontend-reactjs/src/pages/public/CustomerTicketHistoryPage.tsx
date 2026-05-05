@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
-import { getStoredRole, getToken } from '../../auth/storage';
+import { getStoredEmail, getStoredName, getStoredPhone, getStoredRole, getToken } from '../../auth/storage';
 import CustomerAccountShell from '../../components/account/CustomerAccountShell';
 
 type ApiResponse<T> = {
@@ -11,6 +11,7 @@ type ApiResponse<T> = {
 };
 
 type TripSummary = {
+  id?: number;
   tenTuyen?: string;
   diemDi?: string;
   diemDen?: string;
@@ -79,6 +80,7 @@ const formatInstant = (value?: string) => {
 };
 
 const CustomerTicketHistoryPage = () => {
+  const navigate = useNavigate();
   const role = getStoredRole();
   const token = getToken();
   const [loading, setLoading] = useState(true);
@@ -87,23 +89,57 @@ const CustomerTicketHistoryPage = () => {
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [requestingId, setRequestingId] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   /** Thông báo tạm tại cột Thông báo (yêu cầu hủy gửi đi, hoặc lỗi) */
   const [ticketInlineMsg, setTicketInlineMsg] = useState<
     Record<number, { text: string; kind: 'success' | 'error' | 'warn' }>
   >({});
+
+  const retryPayment = (ticket: TicketItem) => {
+    if (ticket.trangThai !== 'CHO_THANH_TOAN' || !ticket.chuyen?.id) return;
+    navigate('/thanh-toan', {
+      state: {
+        tripType: 'one-way',
+        customer: {
+          fullName: getStoredName() || '',
+          phone: getStoredPhone() || '',
+          email: getStoredEmail() || '',
+        },
+        createdTickets: [
+          {
+            id: ticket.id,
+            maVe: ticket.maVe,
+            trangThai: ticket.trangThai,
+          },
+        ],
+        outboundTrip: {
+          id: ticket.chuyen.id,
+          tenTuyen: ticket.chuyen.tenTuyen || '',
+          diemDi: ticket.chuyen.diemDi || '',
+          diemDen: ticket.chuyen.diemDen || '',
+          ngayDi: ticket.chuyen.ngayDi || '',
+          gioDi: ticket.chuyen.gioDi || '',
+          giaVe: Number(ticket.tongTien || 0),
+        },
+        selectedOutboundSeats: ticket.maGhe || [],
+        totalOutbound: Number(ticket.tongTien || 0),
+        totalAmount: Number(ticket.tongTien || 0),
+      },
+    });
+  };
 
   const canRequestCancel = (t: TicketItem) => {
     if (t.trangThai === 'DANG_XU_LY') return false;
     if (t.trangThai === 'CHO_THANH_TOAN') return true;
     if (t.trangThai !== 'DA_THANH_TOAN') return false;
     if (t.ngayDat) {
-      const h = (Date.now() - new Date(t.ngayDat).getTime()) / 3600000;
+      const h = (nowMs - new Date(t.ngayDat).getTime()) / 3600000;
       if (h >= 12) return false;
     }
     if (t.chuyen?.ngayDi && t.chuyen?.gioDi) {
       const gio = typeof t.chuyen.gioDi === 'string' ? t.chuyen.gioDi : '';
       const dep = new Date(`${t.chuyen.ngayDi}T${gio.length >= 5 ? gio.slice(0, 5) : gio}:00`);
-      if (!Number.isNaN(dep.getTime()) && dep.getTime() - Date.now() < 12 * 3600000) return false;
+      if (!Number.isNaN(dep.getTime()) && dep.getTime() - nowMs < 12 * 3600000) return false;
     }
     return true;
   };
@@ -165,6 +201,11 @@ const CustomerTicketHistoryPage = () => {
       setRequestingId(null);
     }
   };
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 60000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   useEffect(() => {
     const loadTickets = async () => {
@@ -336,22 +377,34 @@ const CustomerTicketHistoryPage = () => {
                             </div>
                           </td>
                           <td className="px-4 py-3 align-top">
-                            {canRequestCancel(ticket) ? (
-                              <button
-                                type="button"
-                                disabled={requestingId === ticket.id}
-                                onClick={() => void requestCancel(ticket)}
-                                className="rounded-lg border border-[#ef5222] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#ef5222] hover:bg-[#fff0ea] disabled:opacity-50"
-                              >
-                                {requestingId === ticket.id
-                                  ? '…'
-                                  : ticket.trangThai === 'CHO_THANH_TOAN'
-                                    ? 'Hủy vé'
-                                    : 'Yêu cầu hủy vé'}
-                              </button>
-                            ) : (
-                              <span className="text-xs text-gray-400">—</span>
-                            )}
+                            <div className="flex flex-col gap-2">
+                              {ticket.trangThai === 'CHO_THANH_TOAN' && (
+                                <button
+                                  type="button"
+                                  onClick={() => retryPayment(ticket)}
+                                  className="rounded-lg border border-[#ef5222] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#ef5222] hover:bg-[#fff0ea]"
+                                >
+                                  Thanh toán lại
+                                </button>
+                              )}
+                              {canRequestCancel(ticket) && (
+                                <button
+                                  type="button"
+                                  disabled={requestingId === ticket.id}
+                                  onClick={() => void requestCancel(ticket)}
+                                  className="rounded-lg border border-[#ef5222] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#ef5222] hover:bg-[#fff0ea] disabled:opacity-50"
+                                >
+                                  {requestingId === ticket.id
+                                    ? '…'
+                                    : ticket.trangThai === 'CHO_THANH_TOAN'
+                                      ? 'Hủy vé'
+                                      : 'Yêu cầu hủy vé'}
+                                </button>
+                              )}
+                              {ticket.trangThai !== 'CHO_THANH_TOAN' && !canRequestCancel(ticket) && (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

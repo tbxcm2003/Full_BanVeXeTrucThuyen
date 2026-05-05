@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ChevronLeft } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../api/client';
-import { getStoredRole, getToken } from '../../auth/storage';
+import { getStoredRole } from '../../auth/storage';
 
 type TripPayload = {
   id: number;
@@ -18,6 +18,7 @@ type CreatedTicket = {
   id: number;
   maVe: string;
   trangThai: string;
+  ngayDat?: string;
 };
 
 type PaymentState = {
@@ -43,19 +44,17 @@ type ApiResponse<T> = {
   data: T;
 };
 
-type PaymentMethodPayload = 'CHUYEN_KHOAN' | 'VI_DIEN_TU' | 'THE';
-
-const MERCHANT_NAME = 'VinaGo';
-const BANK_NAME = 'MB Bank';
-const BANK_ACCOUNT = '0123456789';
+type PayOsLinkResponse = {
+  orderCode: number;
+  checkoutUrl: string;
+  qrCode?: string;
+};
 
 const methods = [
-  'Thanh toán VietQR',
-  'ZaloPay',
-  'VNPAY',
-  'ShopeePay',
-  'MoMo',
+  'PayOS',
 ];
+const PAYMENT_STATE_STORAGE_KEY = 'banvexe_payment_state';
+const HOLD_SECONDS = 5 * 60;
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(value);
@@ -66,26 +65,35 @@ const formatDateTime = (trip?: TripPayload) => {
   return `${trip.gioDi?.slice(0, 5) || '--:--'} ${d && m && y ? `${d}/${m}/${y}` : ''}`.trim();
 };
 
-const toPaymentMethodPayload = (method: string): PaymentMethodPayload => {
-  if (method === 'Thanh toán VietQR') return 'CHUYEN_KHOAN';
-  return 'VI_DIEN_TU';
-};
-
-const toQrAppCode = (method: string) => {
-  if (method === 'Thanh toán VietQR') return 'vietqr';
-  if (method === 'ZaloPay') return 'zalopay';
-  if (method === 'VNPAY') return 'vnpay';
-  if (method === 'ShopeePay') return 'shopeepay';
-  if (method === 'MoMo') return 'momo';
-  return 'vietqr';
+const calcInitialRemainingSeconds = (createdTickets?: CreatedTicket[]) => {
+  if (!createdTickets?.length) return HOLD_SECONDS;
+  const createdAtMs = createdTickets
+    .map((ticket) => (ticket.ngayDat ? new Date(ticket.ngayDat).getTime() : NaN))
+    .filter((value) => Number.isFinite(value));
+  const origin = createdAtMs.length > 0 ? Math.min(...createdAtMs) : Date.now();
+  const elapsed = Math.floor((Date.now() - origin) / 1000);
+  return Math.max(0, HOLD_SECONDS - elapsed);
 };
 
 const PaymentPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const state = (location.state ?? {}) as PaymentState;
-  const [method, setMethod] = useState('Thanh toán VietQR');
+  const [searchParams] = useSearchParams();
+  const restoredState = useMemo(() => {
+    if (location.state) return location.state as PaymentState;
+    try {
+      const raw = sessionStorage.getItem(PAYMENT_STATE_STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as PaymentState) : ({} as PaymentState);
+    } catch {
+      return {} as PaymentState;
+    }
+  }, [location.state]);
+  const state = restoredState;
+  const [method, setMethod] = useState('PayOS');
   const [dangThanhToan, setDangThanhToan] = useState(false);
+  const [remainingSeconds, setRemainingSeconds] = useState(() => calcInitialRemainingSeconds(restoredState.createdTickets));
+  const timeoutHandledRef = useRef(false);
+  const isCanceledByPayOs = searchParams.get('payos') === 'cancel';
 
   const totalAmount = Number(state.totalAmount || 0);
   const totalOutbound = Number(state.totalOutbound || 0);
@@ -97,8 +105,50 @@ const PaymentPage = () => {
     if (!state.outboundTrip) return 'Thanh toán';
     return state.outboundTrip.tenTuyen || `${state.outboundTrip.diemDi} - ${state.outboundTrip.diemDen}`;
   }, [state.outboundTrip]);
+  const countdownText = useMemo(() => {
+    const mm = Math.floor(remainingSeconds / 60);
+    const ss = remainingSeconds % 60;
+    return `${mm.toString().padStart(2, '0')} : ${ss.toString().padStart(2, '0')}`;
+  }, [remainingSeconds]);
 
-  if (!state.customer || !state.outboundTrip || !state.createdTickets?.length) {
+  const hasPaymentState = Boolean(state.customer && state.outboundTrip && state.createdTickets?.length);
+  const ticketCodes = (state.createdTickets ?? []).map((t) => t.maVe).filter(Boolean);
+
+  useEffect(() => {
+    if (!state.customer || !state.outboundTrip || !state.createdTickets?.length) return;
+    sessionStorage.setItem(PAYMENT_STATE_STORAGE_KEY, JSON.stringify(state));
+  }, [state]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!hasPaymentState) return;
+    if (remainingSeconds > 0 || timeoutHandledRef.current) return;
+    timeoutHandledRef.current = true;
+    void (async () => {
+      try {
+        for (const ticket of state.createdTickets ?? []) {
+          await api.post<ApiResponse<null>>('/api/public/booking/tickets/cancel', {
+            soDienThoai: state.customer.phone,
+            maVe: ticket.maVe,
+          });
+        }
+      } catch {
+        // best-effort release pending tickets
+      } finally {
+        sessionStorage.removeItem(PAYMENT_STATE_STORAGE_KEY);
+        window.alert('Đặt vé không thành công do quá thời gian giữ chỗ (05:00). Vui lòng đặt lại.');
+        navigate('/', { replace: true });
+      }
+    })();
+  }, [hasPaymentState, navigate, remainingSeconds, state.createdTickets, state.customer?.phone]);
+
+  if (!hasPaymentState) {
     return (
       <div className="min-h-[65vh] bg-[#f3f3f5] px-4 py-12">
         <div className="mx-auto max-w-3xl rounded-2xl border border-orange-100 bg-white p-8 text-center shadow-sm">
@@ -111,77 +161,31 @@ const PaymentPage = () => {
     );
   }
 
-  const ticketCodes = (state.createdTickets ?? []).map((t) => t.maVe).filter(Boolean);
-  const shortTicketRef = ticketCodes.join('-').slice(0, 30);
-  const transferNote = `TT ${shortTicketRef || 'BOOKING'} ${state.customer.phone}`.slice(0, 60);
-
-  const qrData = useMemo(() => {
-    if (method === 'Thanh toán VietQR') {
-      return [
-        'PAYMENT',
-        `merchant=${MERCHANT_NAME}`,
-        `bank=${BANK_NAME}`,
-        `account=${BANK_ACCOUNT}`,
-        `amount=${Math.max(0, Math.round(totalAmount))}`,
-        `note=${transferNote}`,
-      ].join('|');
-    }
-
-    return [
-      'PAYMENT',
-      `provider=${toQrAppCode(method)}`,
-      `merchant=${MERCHANT_NAME}`,
-      `amount=${Math.max(0, Math.round(totalAmount))}`,
-      `ticket=${shortTicketRef || 'BOOKING'}`,
-      `phone=${state.customer.phone}`,
-    ].join('|');
-  }, [method, totalAmount, transferNote, shortTicketRef, state.customer.phone]);
-
-  const qrUrl = useMemo(() => {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=${encodeURIComponent(qrData)}`;
-  }, [qrData]);
-
-  const paymentGuide = useMemo(() => {
-    if (method === 'Thanh toán VietQR') {
-      return `Mở app ngân hàng, quét QR, kiểm tra số tiền và nội dung "${transferNote}" trước khi xác nhận.`;
-    }
-    return `Mở ứng dụng ${method}, quét mã QR và xác nhận thanh toán ${formatCurrency(totalAmount)}.`;
-  }, [method, totalAmount, transferNote]);
+  const customer = state.customer as PaymentState['customer'];
+  const outboundTrip = state.outboundTrip as TripPayload;
 
   const onFinish = () => {
     void (async () => {
-      if (dangThanhToan) return;
+      if (dangThanhToan || remainingSeconds <= 0) return;
       setDangThanhToan(true);
       try {
-        const phuongThuc = toPaymentMethodPayload(method);
         const tickets = state.createdTickets ?? [];
-        const token = getToken();
-        const role = getStoredRole();
-        const useAuthenticatedPayment = Boolean(token && role === 'KHACH_HANG');
-        for (const ticket of tickets) {
-          if (useAuthenticatedPayment) {
-            await api.post<ApiResponse<null>>(`/api/me/booking/tickets/${ticket.id}/pay`, {
-              phuongThuc,
-              dongYDieuKhoan: true,
-            });
-          } else {
-            await api.post<ApiResponse<null>>(`/api/public/booking/tickets/${ticket.id}/pay`, {
-              phuongThuc,
-              dongYDieuKhoan: true,
-              email: state.customer.email,
-              soDienThoai: state.customer.phone,
-            });
-          }
+        const payload = {
+          ticketIds: tickets.map((ticket) => ticket.id),
+          email: customer.email,
+          soDienThoai: customer.phone,
+          hoTen: customer.fullName,
+        };
+        const { data } = await api.post<ApiResponse<PayOsLinkResponse>>('/api/public/booking/payos/create-link', payload);
+        const checkoutUrl = data?.data?.checkoutUrl;
+        if (!checkoutUrl) {
+          throw new Error('Không lấy được liên kết thanh toán');
         }
-        window.alert(`Thanh toán thành công ${tickets.length} vé.`);
-        navigate('/tra-cuu-ve', {
-          state: {
-            highlightedTicketCodes: ticketCodes,
-          },
-        });
+        sessionStorage.setItem(PAYMENT_STATE_STORAGE_KEY, JSON.stringify(state));
+        window.location.href = checkoutUrl;
       } catch (error) {
         const axiosErr = error as { response?: { data?: { message?: string } } };
-        const msg = axiosErr.response?.data?.message || 'Thanh toán thất bại. Vui lòng thử lại.';
+        const msg = axiosErr.response?.data?.message || 'Không thể chuyển sang PayOS. Vui lòng thử lại.';
         window.alert(msg);
       } finally {
         setDangThanhToan(false);
@@ -225,28 +229,35 @@ const PaymentPage = () => {
           <p className="text-center text-sm text-gray-500">Tổng tiền vé</p>
           <p className="text-center text-5xl font-extrabold text-[#e45a2f]">{formatCurrency(totalAmount)}</p>
           <div className="mt-4 rounded-xl bg-[#fafafa] p-4">
-            <p className="mb-2 text-center text-sm text-[#e89b66]">Thời gian giữ chỗ còn lại 04 : 50</p>
-            <button
-              type="button"
-              disabled={dangThanhToan}
-              onClick={onFinish}
-              className="mx-auto block w-fit rounded-2xl border border-[#f3b29e] bg-white p-3 shadow-sm transition hover:shadow-md disabled:cursor-not-allowed disabled:opacity-70"
-              aria-label="Quét QR để thanh toán"
-            >
-              <img
-                src={qrUrl}
-                alt={`QR thanh toán ${method}`}
-                className="h-56 w-56 rounded-lg border border-gray-200 object-cover"
-              />
-            </button>
-            <p className="mt-3 text-center text-sm font-medium text-[#0e5a32]">{paymentGuide}</p>
-            {method === 'Thanh toán VietQR' && (
-              <div className="mt-3 rounded-lg border border-[#0e5a32]/15 bg-[#f6fcf8] p-3 text-xs text-gray-700">
-                <p><span className="font-semibold">Ngân hàng:</span> {BANK_NAME}</p>
-                <p><span className="font-semibold">Số tài khoản:</span> {BANK_ACCOUNT}</p>
-                <p><span className="font-semibold">Nội dung:</span> {transferNote}</p>
+            <p className="mb-2 text-center text-sm text-[#e89b66]">Thời gian giữ chỗ còn lại {countdownText}</p>
+            {isCanceledByPayOs && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                Thanh toán không thành công do bạn đã hủy trên PayOS. Nếu muốn thanh toán lại, vui lòng vào lịch sử vé.
               </div>
             )}
+            <button
+              type="button"
+              disabled={dangThanhToan || remainingSeconds <= 0 || isCanceledByPayOs}
+              onClick={onFinish}
+              className="mx-auto mt-2 block w-full max-w-xs rounded-full bg-[#ef5222] px-6 py-3 text-sm font-semibold text-white hover:bg-[#d84a1e] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {dangThanhToan ? 'Đang chuyển qua PayOS...' : 'Thanh toán với PayOS'}
+            </button>
+            {isCanceledByPayOs && (
+              <button
+                type="button"
+                onClick={() => {
+                  const role = getStoredRole();
+                  navigate(role === 'KHACH_HANG' ? '/tai-khoan/lich-su-mua-ve' : '/tra-cuu-ve');
+                }}
+                className="mx-auto mt-2 block w-full max-w-xs rounded-full border border-[#ef5222] bg-white px-6 py-3 text-sm font-semibold text-[#ef5222] hover:bg-[#fff0ea]"
+              >
+                Thanh toán sau
+              </button>
+            )}
+            <p className="mt-3 text-center text-sm font-medium text-[#0e5a32]">
+              Bạn sẽ được chuyển đến cổng PayOS để hoàn tất thanh toán.
+            </p>
           </div>
         </section>
 
@@ -254,9 +265,9 @@ const PaymentPage = () => {
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <h3 className="text-2xl font-bold text-gray-800">Thông tin hành khách</h3>
             <div className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Họ và tên</span><span className="font-semibold">{state.customer.fullName}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Số điện thoại</span><span className="font-semibold">{state.customer.phone}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-semibold">{state.customer.email}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Họ và tên</span><span className="font-semibold">{customer.fullName}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Số điện thoại</span><span className="font-semibold">{customer.phone}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Email</span><span className="font-semibold">{customer.email}</span></div>
             </div>
           </div>
 
@@ -266,8 +277,8 @@ const PaymentPage = () => {
               <span className="text-lg text-[#ef5222]">Chi tiết</span>
             </div>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Tuyến xe</span><span className="font-semibold">{state.outboundTrip.tenTuyen}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Thời gian xuất bến</span><span className="font-semibold text-[#00613d]">{formatDateTime(state.outboundTrip)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Tuyến xe</span><span className="font-semibold">{outboundTrip.tenTuyen}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Thời gian xuất bến</span><span className="font-semibold text-[#00613d]">{formatDateTime(outboundTrip)}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Số lượng ghế</span><span className="font-semibold">{seatsOut.length} Ghế</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Số ghế</span><span className="font-semibold">{seatsOut.join(', ') || 'Chưa chọn'}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Tổng tiền lượt đi</span><span className="font-semibold text-[#00613d]">{formatCurrency(totalOutbound)}</span></div>

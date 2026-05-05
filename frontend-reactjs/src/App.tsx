@@ -22,6 +22,7 @@ import ContactPage from './pages/public/ContactPage';
 import BookingGuidePage from './pages/public/BookingGuidePage';
 import BookingPage from './pages/public/BookingPage';
 import PaymentPage from './pages/public/PaymentPage';
+import PaymentResultPage from './pages/public/PaymentResultPage';
 import CustomerProfilePage from './pages/public/CustomerProfilePage';
 import CustomerTicketHistoryPage from './pages/public/CustomerTicketHistoryPage';
 import CustomerChangePasswordPage from './pages/public/CustomerChangePasswordPage';
@@ -38,6 +39,7 @@ function App() {
           <Route path='tra-cuu-ve' element={<TicketSearchPage />} />
           <Route path='dat-ve' element={<BookingPage />} />
           <Route path='thanh-toan' element={<PaymentPage />} />
+          <Route path='thanh-toan/ket-qua' element={<PaymentResultPage />} />
           <Route path='ve-chung-toi' element={<AboutPage />} />
           <Route path='lien-he' element={<ContactPage />} />
           <Route path='huong-dan-dat-ve' element={<BookingGuidePage />} />

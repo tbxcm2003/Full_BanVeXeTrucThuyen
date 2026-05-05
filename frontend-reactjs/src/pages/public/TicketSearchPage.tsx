@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { FileText, Search, Ticket, User } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 
 type TicketSearchLocationState = {
@@ -63,6 +63,7 @@ const formatInstant = (value?: string) => {
 
 const TicketSearchPage = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const state = (location.state ?? {}) as TicketSearchLocationState;
   const highlightedCodes = useMemo(
     () => (state.highlightedTicketCodes ?? []).filter((c) => typeof c === 'string' && c.trim().length > 0),
@@ -168,6 +169,39 @@ const TicketSearchPage = () => {
         setDangHuy(false);
       }
     })();
+  };
+
+  const onRetryPayment = () => {
+    if (!ticketResult || ticketResult.trangThai !== 'CHO_THANH_TOAN' || !ticketResult.chuyen?.id) return;
+    navigate('/thanh-toan', {
+      state: {
+        tripType: 'one-way',
+        customer: {
+          fullName: ticketResult.hoTenKhach || '',
+          phone: ticketResult.soDienThoaiKhach || phone.trim(),
+          email: ticketResult.emailKhach || '',
+        },
+        createdTickets: [
+          {
+            id: ticketResult.id,
+            maVe: ticketResult.maVe,
+            trangThai: ticketResult.trangThai,
+          },
+        ],
+        outboundTrip: {
+          id: ticketResult.chuyen.id,
+          tenTuyen: ticketResult.chuyen.tenTuyen || '',
+          diemDi: ticketResult.chuyen.diemDi || '',
+          diemDen: ticketResult.chuyen.diemDen || '',
+          ngayDi: ticketResult.chuyen.ngayDi || '',
+          gioDi: ticketResult.chuyen.gioDi || '',
+          giaVe: Number(ticketResult.chuyen.giaVe || ticketResult.tongTien || 0),
+        },
+        selectedOutboundSeats: ticketResult.maGhe || [],
+        totalOutbound: Number(ticketResult.tongTien || 0),
+        totalAmount: Number(ticketResult.tongTien || 0),
+      },
+    });
   };
 
   return (
@@ -319,14 +353,25 @@ const TicketSearchPage = () => {
                     </div>
                     {ticketResult.ghiChu && <p className="mt-3 text-sm text-gray-500">Ghi chú: {ticketResult.ghiChu}</p>}
                     <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <button
-                        type="button"
-                        onClick={onCancelTicket}
-                        disabled={dangHuy || !canRequestCancel(ticketResult)}
-                        className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {dangHuy ? 'Đang xử lý...' : 'Hủy vé'}
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {ticketResult.trangThai === 'CHO_THANH_TOAN' && (
+                          <button
+                            type="button"
+                            onClick={onRetryPayment}
+                            className="rounded-full border border-[#ef5222] bg-white px-4 py-2 text-sm font-semibold text-[#ef5222] transition hover:bg-[#fff0ea]"
+                          >
+                            Thanh toán lại
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={onCancelTicket}
+                          disabled={dangHuy || !canRequestCancel(ticketResult)}
+                          className="rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {dangHuy ? 'Đang xử lý...' : 'Hủy vé'}
+                        </button>
+                      </div>
                       <div className="text-sm">
                         {huyMessage && <span className="text-green-700">{huyMessage}</span>}
                         {huyError && <span className="text-red-600">{huyError}</span>}
