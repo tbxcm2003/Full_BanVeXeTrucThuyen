@@ -4,8 +4,8 @@ spring:
   application:
     name: quan-ly-tai-khoan
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/QuanLyVeXe?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&allowPublicKeyRetrieval=true&useSSL=false}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:mariadb://localhost:3306/QuanLyVeXe?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8mb4&connectionCollation=utf8mb4_unicode_ci}
+    driver-class-name: org.mariadb.jdbc.Driver
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
@@ -16,7 +16,7 @@ spring:
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
+        dialect: org.hibernate.dialect.MariaDBDialect
         default_batch_fetch_size: 32
         jdbc:
           batch_size: 32
@@ -37,7 +37,8 @@ spring:
             enable: true
   sql:
     init:
-      mode: always
+      # Chỉ dùng để seed lần đầu; sau khi DB đã có dữ liệu thì nên để 'never'
+      mode: never
       schema-locations: ${SPRING_SQL_INIT_SCHEMA_LOCATIONS:file:../database/data.sql}
       encoding: UTF-8
       continue-on-error: true
@@ -74,6 +75,7 @@ app:
       ticket-lookup-url: ${APP_BOOKING_BRAND_TICKET_LOOKUP_URL:http://localhost:5173/tra-cuu-ve}
       history-url: ${APP_BOOKING_BRAND_HISTORY_URL:http://localhost:5173/lich-su-dat-ve}
   payos:
+    dev-mock: ${APP_PAYOS_DEV_MOCK:false}
     client-id: ${PAYOS_CLIENT_ID:}
     api-key: ${PAYOS_API_KEY:}
     checksum-key: ${PAYOS_CHECKSUM_KEY:}

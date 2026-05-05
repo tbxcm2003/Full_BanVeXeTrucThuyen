@@ -47,6 +47,9 @@ public class PayOsService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
+    @Value("${app.payos.dev-mock:false}")
+    private boolean devMock;
+
     @Value("${app.payos.client-id:}")
     private String clientId;
 
@@ -102,6 +105,23 @@ public class PayOsService {
         }
 
         long orderCode = Instant.now().toEpochMilli();
+        if (devMock) {
+            String pendingKey = pendingKey(orderCode);
+            for (VeXe ve : tickets) {
+                ThanhToan tt = new ThanhToan();
+                tt.setVeXe(ve);
+                tt.setSoTien(ve.getTongTien());
+                tt.setPhuongThuc(PaymentMethod.CHUYEN_KHOAN);
+                tt.setMaGiaoDich(pendingKey);
+                tt.setTrangThai(PaymentTxnStatus.DANG_XU_LY);
+                tt.setNgayThanhToan(Instant.now());
+                thanhToanRepository.save(tt);
+            }
+            String sep = returnUrl.contains("?") ? "&" : "?";
+            String checkoutUrl = returnUrl + sep + "orderCode=" + orderCode + "&payosDevMock=1";
+            return new PayOsLinkResponse(orderCode, checkoutUrl, "");
+        }
+
         long amount = tickets.stream()
             .map(VeXe::getTongTien)
             .reduce(BigDecimal.ZERO, BigDecimal::add)
@@ -143,10 +163,16 @@ public class PayOsService {
 
     @Transactional
     public PayOsConfirmResponse confirmOrder(Long orderCode) {
-        ensureConfigured();
         if (orderCode == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thiếu orderCode");
         }
+
+        if (devMock) {
+            finalizeOrder(orderCode, true, "DEV_MOCK_PAID");
+            return new PayOsConfirmResponse(orderCode, "DEV_MOCK_PAID", true);
+        }
+
+        ensureConfigured();
 
         JsonNode node = getJson(baseUrl + "/v2/payment-requests/" + orderCode);
         JsonNode data = node.path("data");
@@ -397,6 +423,9 @@ public class PayOsService {
     }
 
     private void ensureConfigured() {
+        if (devMock) {
+            return;
+        }
         StringBuilder missing = new StringBuilder();
         if (clientId == null || clientId.isBlank()) {
             missing.append("PAYOS_CLIENT_ID");
